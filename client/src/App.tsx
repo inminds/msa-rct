@@ -8,6 +8,10 @@ import Dashboard from "@/pages/Dashboard";
 import Landing from "@/pages/Landing";
 import Uploads from "@/pages/Uploads";
 import NCMAnalysis from "@/pages/NCMAnalysis";
+import TaxAnalysis from "@/pages/TaxAnalysis";
+import Reports from "@/pages/Reports";
+import Users from "@/pages/Users";
+import RPA from "@/pages/RPA";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -22,6 +26,10 @@ function Router() {
           <Route path="/" component={Dashboard} />
           <Route path="/uploads" component={Uploads} />
           <Route path="/ncm-analysis" component={NCMAnalysis} />
+          <Route path="/tax-analysis" component={TaxAnalysis} />
+          <Route path="/reports" component={Reports} />
+          <Route path="/users" component={Users} />
+          <Route path="/rpa" component={RPA} />
         </>
       )}
       <Route component={NotFound} />

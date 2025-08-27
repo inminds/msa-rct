@@ -50,7 +50,7 @@ export default function NCMAnalysis() {
     return tributes.some(t => t.validated);
   };
 
-  const filteredAnalyses = recentAnalyses?.filter((analysis: any) => {
+  const filteredAnalyses = (recentAnalyses as any[])?.filter((analysis: any) => {
     const matchesSearch = !searchTerm || 
       analysis.ncmCode.includes(searchTerm) ||
       analysis.productName?.toLowerCase().includes(searchTerm.toLowerCase()) ||

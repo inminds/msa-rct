@@ -79,7 +79,7 @@ export default function Uploads() {
               <CardTitle>Histórico de Uploads</CardTitle>
             </CardHeader>
             <CardContent>
-              {!uploads || uploads.length === 0 ? (
+              {!(uploads as any[]) || (uploads as any[]).length === 0 ? (
                 <div className="text-center py-12">
                   <AlertCircle className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -118,7 +118,7 @@ export default function Uploads() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {uploads.map((upload: any) => (
+                      {(uploads as any[]).map((upload: any) => (
                         <tr key={upload.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">

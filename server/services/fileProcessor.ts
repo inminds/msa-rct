@@ -85,8 +85,9 @@ export class FileProcessor {
       
       for (const record of records) {
         // Try common column names for NCM
-        const ncmCode = record.NCM || record.ncm || record.codigo_ncm || record.ncm_code;
-        const productName = record.produto || record.product || record.nome_produto || record.description || record.descricao;
+        const recordObj = record as Record<string, any>;
+        const ncmCode = recordObj.NCM || recordObj.ncm || recordObj.codigo_ncm || recordObj.ncm_code;
+        const productName = recordObj.produto || recordObj.product || recordObj.nome_produto || recordObj.description || recordObj.descricao;
         
         if (ncmCode && ncmCode.length === 8) {
           ncmItems.push({

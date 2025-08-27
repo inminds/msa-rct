@@ -95,7 +95,7 @@ export default function Dashboard() {
                   <div>
                     <p className="text-sm font-medium text-gray-600">Arquivos Processados</p>
                     <p className="text-3xl font-bold text-gray-900" data-testid="stat-processed-files">
-                      {stats?.processedFiles || 0}
+                      {(stats as any)?.processedFiles || 0}
                     </p>
                   </div>
                   <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -116,7 +116,7 @@ export default function Dashboard() {
                   <div>
                     <p className="text-sm font-medium text-gray-600">NCMs Identificados</p>
                     <p className="text-3xl font-bold text-gray-900" data-testid="stat-ncm-codes">
-                      {stats?.ncmCodes || 0}
+                      {(stats as any)?.ncmCodes || 0}
                     </p>
                   </div>
                   <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
@@ -137,7 +137,7 @@ export default function Dashboard() {
                   <div>
                     <p className="text-sm font-medium text-gray-600">Análises Concluídas</p>
                     <p className="text-3xl font-bold text-gray-900" data-testid="stat-completed-analyses">
-                      {stats?.completedAnalyses || 0}
+                      {(stats as any)?.completedAnalyses || 0}
                     </p>
                   </div>
                   <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
@@ -158,7 +158,7 @@ export default function Dashboard() {
                   <div>
                     <p className="text-sm font-medium text-gray-600">Pendentes Validação</p>
                     <p className="text-3xl font-bold text-gray-900" data-testid="stat-pending-validation">
-                      {stats?.pendingValidation || 0}
+                      {(stats as any)?.pendingValidation || 0}
                     </p>
                   </div>
                   <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
@@ -186,7 +186,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {recentUploads?.slice(0, 3).map((upload: any) => (
+                {(recentUploads as any[])?.slice(0, 3).map((upload: any) => (
                   <div
                     key={upload.id}
                     className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200"
@@ -234,7 +234,7 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {taxDistribution && Object.entries(taxDistribution).map(([type, count]) => (
+                  {taxDistribution && Object.entries(taxDistribution as Record<string, number>).map(([type, count]) => (
                     <div key={type} className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
                         <div className={`w-4 h-4 ${getTaxColor(type.toUpperCase())} rounded`}></div>
@@ -264,33 +264,33 @@ export default function Dashboard() {
                         <div className="flex items-center justify-between mb-2">
                           <span className="font-medium text-gray-900">Federal</span>
                           <span className="text-lg font-bold text-gray-900" data-testid="jurisdiction-federal-count">
-                            {jurisdictionDistribution.federal}
+                            {(jurisdictionDistribution as any).federal}
                           </span>
                         </div>
                         <Progress 
                           value={
-                            (jurisdictionDistribution.federal / 
-                            (jurisdictionDistribution.federal + jurisdictionDistribution.estadual)) * 100
+                            ((jurisdictionDistribution as any).federal / 
+                            ((jurisdictionDistribution as any).federal + (jurisdictionDistribution as any).estadual)) * 100
                           } 
                           className="h-3"
                         />
-                        <p className="text-sm text-gray-500 mt-1">{jurisdictionDistribution.federal} NCMs</p>
+                        <p className="text-sm text-gray-500 mt-1">{(jurisdictionDistribution as any).federal} NCMs</p>
                       </div>
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <span className="font-medium text-gray-900">Estadual</span>
                           <span className="text-lg font-bold text-gray-900" data-testid="jurisdiction-estadual-count">
-                            {jurisdictionDistribution.estadual}
+                            {(jurisdictionDistribution as any).estadual}
                           </span>
                         </div>
                         <Progress 
                           value={
-                            (jurisdictionDistribution.estadual / 
-                            (jurisdictionDistribution.federal + jurisdictionDistribution.estadual)) * 100
+                            ((jurisdictionDistribution as any).estadual / 
+                            ((jurisdictionDistribution as any).federal + (jurisdictionDistribution as any).estadual)) * 100
                           } 
                           className="h-3"
                         />
-                        <p className="text-sm text-gray-500 mt-1">{jurisdictionDistribution.estadual} NCMs</p>
+                        <p className="text-sm text-gray-500 mt-1">{(jurisdictionDistribution as any).estadual} NCMs</p>
                       </div>
                     </>
                   )}
@@ -332,7 +332,7 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {recentAnalyses?.slice(0, 5).map((analysis: any) => (
+                    {(recentAnalyses as any[])?.slice(0, 5).map((analysis: any) => (
                       <tr key={analysis.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="font-mono text-sm font-medium text-gray-900" data-testid={`ncm-code-${analysis.id}`}>
