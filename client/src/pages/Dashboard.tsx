@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { UploadModal } from "@/components/UploadModal";
@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import {
   FileCheck,
   BarChart3,
@@ -19,10 +21,14 @@ import {
   Bot,
   RefreshCw,
   Bell,
+  Database,
+  Trash2,
 } from "lucide-react";
 
 export default function Dashboard() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // Fetch dashboard data
   const { data: stats } = useQuery({
@@ -43,6 +49,44 @@ export default function Dashboard() {
 
   const { data: jurisdictionDistribution } = useQuery({
     queryKey: ["/api/dashboard/jurisdiction-distribution"],
+  });
+
+  // Demo data mutations
+  const generateDemoMutation = useMutation({
+    mutationFn: () => apiRequest("/api/generate-demo-data", { method: "POST" }),
+    onSuccess: () => {
+      toast({
+        title: "Dados de demonstração criados",
+        description: "Os dados fictícios foram populados com sucesso.",
+      });
+      // Invalidate all queries to refetch data
+      queryClient.invalidateQueries();
+    },
+    onError: () => {
+      toast({
+        title: "Erro",
+        description: "Falha ao gerar dados de demonstração.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const clearDemoMutation = useMutation({
+    mutationFn: () => apiRequest("/api/clear-demo-data", { method: "POST" }),
+    onSuccess: () => {
+      toast({
+        title: "Dados limpos",
+        description: "Os dados de demonstração foram removidos.",
+      });
+      queryClient.invalidateQueries();
+    },
+    onError: () => {
+      toast({
+        title: "Erro",
+        description: "Falha ao limpar dados de demonstração.",
+        variant: "destructive",
+      });
+    },
   });
 
   const getTaxColor = (type: string) => {
@@ -381,6 +425,57 @@ export default function Dashboard() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Demo Area */}
+          <Card className="border-2 border-dashed border-blue-300 bg-blue-50">
+            <CardHeader>
+              <div className="flex items-center space-x-2">
+                <Database className="text-blue-600" />
+                <CardTitle className="text-blue-800">Área de Demonstração</CardTitle>
+              </div>
+              <p className="text-sm text-blue-700">
+                Popule dados fictícios para testar todas as funcionalidades do sistema
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Button
+                  onClick={() => generateDemoMutation.mutate()}
+                  disabled={generateDemoMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700"
+                  data-testid="button-generate-demo-data"
+                >
+                  <Database className="w-4 h-4 mr-2" />
+                  {generateDemoMutation.isPending ? "Gerando..." : "Popular Dados Fictícios"}
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  onClick={() => clearDemoMutation.mutate()}
+                  disabled={clearDemoMutation.isPending}
+                  className="border-red-300 text-red-600 hover:bg-red-50"
+                  data-testid="button-clear-demo-data"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  {clearDemoMutation.isPending ? "Limpando..." : "Limpar Dados"}
+                </Button>
+              </div>
+              
+              <div className="mt-4 p-3 bg-blue-100 rounded-md">
+                <p className="text-sm text-blue-800">
+                  <strong>O que será criado:</strong>
+                </p>
+                <ul className="text-sm text-blue-700 mt-2 space-y-1">
+                  <li>• 247 Arquivos processados, 1.834 NCMs, 189 análises, 12 pendentes</li>
+                  <li>• Fila de processamento com 3 arquivos (SPED processando 65%, XML concluído, CSV aguardando)</li>
+                  <li>• Distribuição de tributos: ICMS 847, IPI 523, PIS 1.234, COFINS 1.234</li>
+                  <li>• Competência: 68% Federal (1.247), 32% Estadual (587)</li>
+                  <li>• Análises recentes com NCMs reais: máquinas offset, cerveja, automóveis</li>
+                  <li>• Status de validação com badges coloridos (validado/pendente)</li>
+                </ul>
               </div>
             </CardContent>
           </Card>

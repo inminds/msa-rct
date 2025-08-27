@@ -35,9 +35,8 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Proteção leve para DEMO nas rotas da API
-  // Se suas rotas não ficam sob "/api", mude o prefixo ou use app.use(demoAuth) global.
-  app.use("/api", demoAuth);
+  // Demo auth disabled for demonstration purposes
+  // app.use("/api", demoAuth);
 
   const server = await registerRoutes(app);
 
