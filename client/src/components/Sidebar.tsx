@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 
 const navigation = [
-  { name: "Dashboard", href: "/", icon: BarChart3 },
+  { name: "Dashboard", href: "/app", icon: BarChart3 },
   { name: "Upload de Arquivos", href: "/uploads", icon: Upload },
   { name: "NCMs Extraídos", href: "/ncm-analysis", icon: List },
   { name: "Análise Tributária", href: "/tax-analysis", icon: FileText },
