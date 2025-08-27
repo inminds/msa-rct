@@ -7,6 +7,149 @@ import { TaxCalculator } from "./services/taxCalculator";
 import multer from "multer";
 import { insertUploadSchema, insertNCMItemSchema, insertTributeSchema } from "@shared/schema";
 
+// Demo data generation function
+async function generateDemoData(userId: string): Promise<void> {
+  // Create demo uploads
+  const uploads = [
+    {
+      filename: "sped_fiscal_202401.txt",
+      fileType: "SPED" as const,
+      description: "SPED Fiscal • 2.1 MB • Enviado por Carlos Mendes",
+      userId,
+      status: "PROCESSING" as const,
+    },
+    {
+      filename: "nfe_lote_347.xml",
+      fileType: "XML" as const,
+      description: "XML NFe • 856 KB • Enviado por Ana Silva",
+      userId,
+      status: "COMPLETED" as const,
+    },
+    {
+      filename: "produtos_cliente_abc.csv",
+      fileType: "CSV" as const,
+      description: "CSV Produtos • 2.3 MB • Enviado por Roberto Santos",
+      userId,
+      status: "PENDING" as const,
+    },
+  ];
+
+  const createdUploads = [];
+  for (const upload of uploads) {
+    const created = await storage.createUpload(upload);
+    createdUploads.push(created);
+  }
+
+  // Create demo NCM items
+  const ncmItems = [
+    {
+      uploadId: createdUploads[1].id, // XML file
+      ncmCode: "84483000",
+      productName: "Máquinas de impressão offset",
+      description: "Equipamentos gráficos industriais",
+      quantity: 2,
+      unitValue: 125000.00,
+    },
+    {
+      uploadId: createdUploads[1].id,
+      ncmCode: "22010000",
+      productName: "Cerveja de malte",
+      description: "Bebidas alcoólicas fermentadas",
+      quantity: 1000,
+      unitValue: 3.50,
+    },
+    {
+      uploadId: createdUploads[1].id,
+      ncmCode: "87032110",
+      productName: "Automóveis de passeio",
+      description: "Veículos com motor 1.0 a 1.5",
+      quantity: 5,
+      unitValue: 45000.00,
+    },
+  ];
+
+  const createdNCMItems = [];
+  for (const ncmItem of ncmItems) {
+    const created = await storage.createNCMItem(ncmItem);
+    createdNCMItems.push(created);
+  }
+
+  // Create demo tributes
+  const tributes = [
+    // Máquinas de impressão offset
+    {
+      ncmItemId: createdNCMItems[0].id,
+      type: "ICMS" as const,
+      jurisdiction: "ESTADUAL" as const,
+      rate: 18.00,
+      calculatedValue: 22500.00,
+      validated: new Date(),
+      validatedBy: userId,
+    },
+    {
+      ncmItemId: createdNCMItems[0].id,
+      type: "PIS" as const,
+      jurisdiction: "FEDERAL" as const,
+      rate: 1.65,
+      calculatedValue: 2062.50,
+      validated: new Date(),
+      validatedBy: userId,
+    },
+    // Cerveja de malte
+    {
+      ncmItemId: createdNCMItems[1].id,
+      type: "ICMS" as const,
+      jurisdiction: "ESTADUAL" as const,
+      rate: 25.00,
+      calculatedValue: 875.00,
+    },
+    {
+      ncmItemId: createdNCMItems[1].id,
+      type: "PIS" as const,
+      jurisdiction: "FEDERAL" as const,
+      rate: 2.10,
+      calculatedValue: 73.50,
+    },
+    {
+      ncmItemId: createdNCMItems[1].id,
+      type: "COFINS" as const,
+      jurisdiction: "FEDERAL" as const,
+      rate: 9.60,
+      calculatedValue: 336.00,
+    },
+    // Automóveis de passeio
+    {
+      ncmItemId: createdNCMItems[2].id,
+      type: "ICMS" as const,
+      jurisdiction: "ESTADUAL" as const,
+      rate: 12.00,
+      calculatedValue: 27000.00,
+      validated: new Date(),
+      validatedBy: userId,
+    },
+    {
+      ncmItemId: createdNCMItems[2].id,
+      type: "PIS" as const,
+      jurisdiction: "FEDERAL" as const,
+      rate: 1.65,
+      calculatedValue: 3712.50,
+    },
+    {
+      ncmItemId: createdNCMItems[2].id,
+      type: "COFINS" as const,
+      jurisdiction: "FEDERAL" as const,
+      rate: 7.60,
+      calculatedValue: 17100.00,
+      validated: new Date(),
+      validatedBy: userId,
+    },
+  ];
+
+  for (const tribute of tributes) {
+    await storage.createTribute(tribute);
+  }
+}
+
 // Configure multer for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -40,6 +183,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
       res.status(500).json({ message: "Failed to fetch dashboard stats" });
+    }
+  });
+
+  // All uploads
+  app.get('/api/uploads', isAuthenticated, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const uploads = await storage.getRecentUploads(limit);
+      res.json(uploads);
+    } catch (error) {
+      console.error("Error fetching uploads:", error);
+      res.status(500).json({ message: "Failed to fetch uploads" });
     }
   });
 
@@ -181,6 +336,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error validating tribute:", error);
       res.status(500).json({ message: "Failed to validate tribute" });
+    }
+  });
+
+  // Demo data generation endpoint
+  app.post('/api/generate-demo-data', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      await generateDemoData(userId);
+      res.json({ message: "Demo data generated successfully" });
+    } catch (error) {
+      console.error("Error generating demo data:", error);
+      res.status(500).json({ message: "Failed to generate demo data" });
     }
   });
 
