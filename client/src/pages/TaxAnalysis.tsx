@@ -63,10 +63,10 @@ export default function TaxAnalysis() {
       analysis.ncmCode.includes(searchTerm) ||
       analysis.productName?.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesJurisdiction = !jurisdictionFilter ||
+    const matchesJurisdiction = !jurisdictionFilter || jurisdictionFilter === "all" ||
       analysis.tributes?.some((t: any) => t.jurisdiction === jurisdictionFilter);
     
-    const matchesTaxType = !taxTypeFilter ||
+    const matchesTaxType = !taxTypeFilter || taxTypeFilter === "all" ||
       analysis.tributes?.some((t: any) => t.type === taxTypeFilter);
     
     return matchesSearch && matchesJurisdiction && matchesTaxType;
@@ -230,7 +230,7 @@ export default function TaxAnalysis() {
                       <SelectValue placeholder="Competência" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todas</SelectItem>
+                      <SelectItem value="all">Todas</SelectItem>
                       <SelectItem value="FEDERAL">Federal</SelectItem>
                       <SelectItem value="ESTADUAL">Estadual</SelectItem>
                     </SelectContent>
@@ -242,7 +242,7 @@ export default function TaxAnalysis() {
                       <SelectValue placeholder="Tipo de Tributo" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todos</SelectItem>
+                      <SelectItem value="all">Todos</SelectItem>
                       <SelectItem value="ICMS">ICMS</SelectItem>
                       <SelectItem value="IPI">IPI</SelectItem>
                       <SelectItem value="PIS">PIS</SelectItem>

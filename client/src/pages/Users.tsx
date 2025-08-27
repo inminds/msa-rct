@@ -100,8 +100,8 @@ export default function Users() {
       user.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesRole = !roleFilter || user.role === roleFilter;
-    const matchesStatus = !statusFilter || user.status === statusFilter;
+    const matchesRole = !roleFilter || roleFilter === "all" || user.role === roleFilter;
+    const matchesStatus = !statusFilter || statusFilter === "all" || user.status === statusFilter;
     
     return matchesSearch && matchesRole && matchesStatus;
   });
@@ -208,7 +208,7 @@ export default function Users() {
                         <SelectValue placeholder="Filtrar por cargo" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Todos os cargos</SelectItem>
+                        <SelectItem value="all">Todos os cargos</SelectItem>
                         <SelectItem value="ADMIN">Administrador</SelectItem>
                         <SelectItem value="ANALYST">Analista</SelectItem>
                         <SelectItem value="USER">Usuário</SelectItem>
@@ -221,7 +221,7 @@ export default function Users() {
                         <SelectValue placeholder="Filtrar por status" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Todos os status</SelectItem>
+                        <SelectItem value="all">Todos os status</SelectItem>
                         <SelectItem value="active">Ativo</SelectItem>
                         <SelectItem value="inactive">Inativo</SelectItem>
                         <SelectItem value="pending">Pendente</SelectItem>

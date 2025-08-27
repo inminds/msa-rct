@@ -56,7 +56,7 @@ export default function NCMAnalysis() {
       analysis.productName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       analysis.description?.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesStatus = !statusFilter ||
+    const matchesStatus = !statusFilter || statusFilter === "all" ||
       (statusFilter === "validated" && isValidated(analysis.tributes)) ||
       (statusFilter === "pending" && !isValidated(analysis.tributes));
     
@@ -113,7 +113,7 @@ export default function NCMAnalysis() {
                       <SelectValue placeholder="Filtrar por status" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todos</SelectItem>
+                      <SelectItem value="all">Todos</SelectItem>
                       <SelectItem value="validated">Validados</SelectItem>
                       <SelectItem value="pending">Pendentes</SelectItem>
                     </SelectContent>

@@ -108,8 +108,8 @@ export default function Reports() {
   };
 
   const filteredReports = recentReports.filter(report => {
-    const matchesType = !reportType || report.type === reportType;
-    const matchesStatus = !statusFilter || report.status === statusFilter;
+    const matchesType = !reportType || reportType === "all" || report.type === reportType;
+    const matchesStatus = !statusFilter || statusFilter === "all" || report.status === statusFilter;
     return matchesType && matchesStatus;
   });
 
@@ -238,7 +238,7 @@ export default function Reports() {
                       <SelectValue placeholder="Tipo de Relatório" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todos</SelectItem>
+                      <SelectItem value="all">Todos</SelectItem>
                       <SelectItem value="tax-summary">Resumo Tributário</SelectItem>
                       <SelectItem value="ncm-analysis">Análise NCM</SelectItem>
                       <SelectItem value="jurisdiction-report">Por Competência</SelectItem>
@@ -252,7 +252,7 @@ export default function Reports() {
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todos</SelectItem>
+                      <SelectItem value="all">Todos</SelectItem>
                       <SelectItem value="completed">Concluído</SelectItem>
                       <SelectItem value="processing">Processando</SelectItem>
                       <SelectItem value="failed">Com Erro</SelectItem>
