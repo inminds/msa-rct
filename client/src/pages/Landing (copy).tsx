@@ -1,18 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calculator, FileText, BarChart3, Upload } from "lucide-react";
-import { apiFetch } from "@/api/client"; // ajuste o path conforme sua estrutura
-
-async function demoLogin() {
-  try {
-    // Chama a rota já com x-demo-key
-    await apiFetch("/api/login", { method: "POST", body: JSON.stringify({ from: "landing" }) });
-    // se a sua rota de app interna for outra, troque aqui
-    window.location.href = "/app";
-  } catch (e: any) {
-    alert("Falha no login da demo: " + e.message);
-  }
-}
 
 export default function Landing() {
   return (
@@ -79,8 +67,7 @@ export default function Landing() {
               <Button
                 size="lg"
                 className="w-full bg-blue-600 hover:bg-blue-700"
-                //onClick={() => window.location.href = "/api/login"}
-                onClick={demoLogin}
+                onClick={() => window.location.href = "/api/login"}
                 data-testid="button-login"
               >
                 Acessar Plataforma
