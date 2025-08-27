@@ -1,0 +1,145 @@
+# 📘 PRD – Projeto TributAI (Versão Consolidada)
+
+---
+
+## 🧠 Visão Geral
+
+**Nome do Projeto:** TributAI – Diagnóstico Tributário Automatizado
+**Cliente:** Machado Schutz Advogados (MSH)
+**Parceiro Técnico:** InMinds Technology
+
+O Projeto TributAI tem como objetivo transformar o processo atual de diagnóstico tributário — hoje realizado manualmente — em uma solução digital inteligente, capaz de ler arquivos fiscais, identificar NCMs e retornar automaticamente as tributações aplicáveis (ICMS, IPI, PIS, COFINS), com base em legislações estaduais e federais.
+
+---
+
+## 🎯 Objetivo
+
+Automatizar a análise fiscal baseada em NCMs, reduzindo o esforço manual, aumentando a precisão na aplicação de tributos e garantindo escalabilidade no atendimento de múltiplos clientes.
+
+---
+
+## 🔍 Escopo do MVP
+
+### Funcionalidades-Chave:
+
+1. **Upload de Arquivos**
+
+   * SPED Fiscal
+   * XMLs de notas fiscais
+   * CSV com NCMs e produtos
+
+2. **Leitura Inteligente de NCMs**
+
+   * Extração automática dos códigos e dados associados
+
+3. **Cálculo Automatizado de Tributos**
+
+   * Identificação de alíquotas por NCM (ICMS, PIS, COFINS, IPI)
+   * Classificação por competência (federal vs estadual)
+
+4. **Relatórios e Exportações**
+
+   * Exportação em PDF, Excel ou CSV
+   * Comparativos e alertas de inconsistências ou distorções
+
+5. **Interface Web Restrita**
+
+   * Uploads, visualização de lotes, painel de análise por NCM
+
+6. **Base Jurídica Dinâmica**
+
+   * Consulta automática a repositórios legais
+   * Atualização por crawler + validação manual
+
+---
+
+## 📥 Entradas Esperadas
+
+* Arquivos SPED (txt)
+* XMLs de NFe
+* Planilhas internas de produtos/NCMs
+
+## 📤 Saídas Esperadas
+
+* Tabela tributária automatizada por NCM
+* Classificação entre tributos federais e estaduais
+* Relatório de divergências ou oportunidades fiscais
+* Histórico de alterações de regras
+
+---
+
+## 🤖 Módulo RPA – Integração com Fontes Externas
+
+Para garantir a atualização contínua das legislações:
+
+### Etapas:
+
+1. **Login supervisionado em portais como Econet**
+
+   * Pausa para resolução de CAPTCHA
+2. **Extração de conteúdos legais por tema (ICMS, IPI, etc.)**
+
+   * BeautifulSoup + Selenium
+3. **Comparação de versões legais (diff)**
+
+   * DeepDiff, difflib ou Pandas
+4. **Alertas e Logs de Alterações**
+
+   * E-mail, Teams, Dashboard
+
+### Stack Recomendada (RPA):
+
+```bash
+Selenium → Acesso automatizado
+BeautifulSoup → Parsing de conteúdo legal
+PyAutoGUI → Apoio em interações manuais
+Pandas → Estruturação e análise
+DeepDiff → Comparação entre versões
+SMTP/API → Envio de alertas
+```
+
+---
+
+## 💡 Arquitetura da Solução
+
+### Backend:
+
+* .NET 8 + Python (camada tributária)
+
+### Frontend:
+
+* ASP.NET MVC (admin) ou React (web client)
+
+### Banco de Dados:
+
+* PostgreSQL ou SQL Server
+
+### OCR / Parser Fiscal:
+
+* Azure Form Recognizer ou bibliotecas SPED/NFE
+
+### Infraestrutura:
+
+* Azure App Services, Blob Storage, Azure AD
+
+### Segurança:
+
+* Controle de acesso via Azure AD + roles por usuário
+
+---
+
+## 📅 Próximos Passos
+
+1. Validação dos arquivos reais com a equipe MSH
+2. Implementação do parser de NCM e carga tributária
+3. Construção do RPA de apoio (crawler de legislação)
+4. Desenvolvimento do frontend e dashboard de análise
+5. Testes com casos reais e entrega do MVP
+
+---
+
+## 📌 Observações Finais
+
+* A automação não será 100%: haverá tratamento manual de exceções
+* A solução deve ser modular e expansível para outros tipos de tributo ou regimes fiscais
+* Ganhos futuros possíveis com integração a APIs públicas ou pagas de legislação tributária

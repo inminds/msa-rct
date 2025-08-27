@@ -1,0 +1,102 @@
+// Prisma schema para o Projeto TributAI
+// Define a estrutura de entidades essenciais para o diagnóstico tributário automatizado
+
+// Fonte de dados e ambiente
+ datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Usuário do sistema
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  name        String?
+  role        Role     @default(USER)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  uploads     Upload[]
+}
+
+enum Role {
+  ADMIN
+  ANALYST
+  USER
+}
+
+// Arquivo carregado para análise
+model Upload {
+  id          String    @id @default(uuid())
+  filename    String
+  fileType    FileType
+  uploadedAt  DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String
+  ncmItems    NCMItem[]
+  status      UploadStatus @default(PENDING)
+}
+
+enum FileType {
+  SPED
+  XML
+  CSV
+}
+
+enum UploadStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  ERROR
+}
+
+// Item NCM extraído do arquivo
+model NCMItem {
+  id          String   @id @default(uuid())
+  ncmCode     String
+  description String?
+  productName String?
+  sourceFile  Upload   @relation(fields: [uploadId], references: [id])
+  uploadId    String
+  tributes    Tribute[]
+}
+
+// Tributação associada ao NCM
+model Tribute {
+  id          String   @id @default(uuid())
+  type        TributeType
+  rate        Float?
+  jurisdiction Jurisdiction
+  lawSource   String?
+  effectiveFrom DateTime?
+  effectiveTo DateTime?
+  ncmItem     NCMItem @relation(fields: [ncmItemId], references: [id])
+  ncmItemId   String
+}
+
+enum TributeType {
+  ICMS
+  IPI
+  PIS
+  COFINS
+}
+
+enum Jurisdiction {
+  FEDERAL
+  ESTADUAL
+}
+
+// Log de alterações legais monitoradas (para RPA)
+model LawChangeLog {
+  id          String   @id @default(uuid())
+  tribute     TributeType
+  jurisdiction Jurisdiction
+  description String
+  detectedAt  DateTime @default(now())
+  previousContent String?
+  newContent      String?
+  sourceUrl       String?
+}
