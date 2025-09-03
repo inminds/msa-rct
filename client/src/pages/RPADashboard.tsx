@@ -131,14 +131,14 @@ export default function RPADashboard() {
       </div>
 
       {/* Critical Alerts */}
-      {criticalChanges?.critical_changes?.length > 0 && (
+      {(criticalChanges as any)?.critical_changes?.length > 0 && (
         <Alert className="border-red-200 bg-red-50" data-testid="critical-alert">
           <AlertTriangle className="h-4 w-4 text-red-600" />
           <AlertTitle className="text-red-800">
             Alertas Críticos Pendentes
           </AlertTitle>
           <AlertDescription className="text-red-700">
-            {criticalChanges.total_critical} mudanças críticas detectadas que requerem atenção imediata.
+            {(criticalChanges as any).total_critical} mudanças críticas detectadas que requerem atenção imediata.
           </AlertDescription>
         </Alert>
       )}
@@ -184,10 +184,10 @@ export default function RPADashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {rpaStatus?.changes_detected_today || 0}
+              {(rpaStatus as any)?.changes_detected_today || 0}
             </div>
             <p className="text-xs text-muted-foreground">
-              {criticalChanges?.total_critical || 0} críticas
+              {(criticalChanges as any)?.total_critical || 0} críticas
             </p>
           </CardContent>
         </Card>
@@ -199,8 +199,8 @@ export default function RPADashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-sm">
-              {rpaStatus?.next_scheduled_execution
-                ? formatDistanceToNow(new Date(rpaStatus.next_scheduled_execution), { 
+              {(rpaStatus as any)?.next_scheduled_execution
+                ? formatDistanceToNow(new Date((rpaStatus as any).next_scheduled_execution), { 
                     locale: ptBR, 
                     addSuffix: true 
                   })
@@ -238,8 +238,8 @@ export default function RPADashboard() {
               <CardContent className="space-y-3">
                 {criticalLoading ? (
                   <div className="text-sm text-muted-foreground">Carregando...</div>
-                ) : criticalChanges?.critical_changes?.length > 0 ? (
-                  criticalChanges.critical_changes.map((change: any) => (
+                ) : (criticalChanges as any)?.critical_changes?.length > 0 ? (
+                  (criticalChanges as any).critical_changes.map((change: any) => (
                     <div key={change.id} className="p-3 border border-red-200 rounded-lg bg-red-50" data-testid={`critical-change-${change.id}`}>
                       <div className="font-medium text-sm text-red-800">
                         {change.title}
@@ -273,8 +273,8 @@ export default function RPADashboard() {
               <CardContent className="space-y-3">
                 {changesLoading ? (
                   <div className="text-sm text-muted-foreground">Carregando mudanças...</div>
-                ) : recentChanges?.changes?.length > 0 ? (
-                  recentChanges.changes.map((change: any) => (
+                ) : (recentChanges as any)?.changes?.length > 0 ? (
+                  (recentChanges as any).changes.map((change: any) => (
                     <div key={change.id} className="flex items-start justify-between p-3 border rounded-lg hover:bg-gray-50" data-testid={`change-${change.id}`}>
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
@@ -333,28 +333,28 @@ export default function RPADashboard() {
                   <>
                     <div className="flex justify-between items-center">
                       <span className="text-sm">Taxa de Sucesso</span>
-                      <span className="font-bold text-green-600">{rpaStats?.success_rate || '0%'}</span>
+                      <span className="font-bold text-green-600">{(rpaStats as any)?.success_rate || '0%'}</span>
                     </div>
-                    <Progress value={parseFloat(rpaStats?.success_rate || '0')} className="h-2" />
+                    <Progress value={parseFloat((rpaStats as any)?.success_rate || '0')} className="h-2" />
                     
                     <Separator />
                     
                     <div className="space-y-2">
                       <div className="flex justify-between">
                         <span className="text-sm">Total de Execuções</span>
-                        <span className="font-medium">{rpaStats?.total_executions || 0}</span>
+                        <span className="font-medium">{(rpaStats as any)?.total_executions || 0}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-sm">Sucessos</span>
-                        <span className="font-medium text-green-600">{rpaStats?.successful_executions || 0}</span>
+                        <span className="font-medium text-green-600">{(rpaStats as any)?.successful_executions || 0}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-sm">Falhas</span>
-                        <span className="font-medium text-red-600">{rpaStats?.failed_executions || 0}</span>
+                        <span className="font-medium text-red-600">{(rpaStats as any)?.failed_executions || 0}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-sm">Tempo Médio</span>
-                        <span className="font-medium">{rpaStats?.avg_execution_time_minutes || 0} min</span>
+                        <span className="font-medium">{(rpaStats as any)?.avg_execution_time_minutes || 0} min</span>
                       </div>
                     </div>
                   </>
@@ -371,7 +371,7 @@ export default function RPADashboard() {
                   <div className="text-sm text-muted-foreground">Carregando...</div>
                 ) : (
                   <div className="space-y-3">
-                    {Object.entries(rpaStats?.changes_by_severity || {}).map(([severity, count]) => (
+                    {Object.entries((rpaStats as any)?.changes_by_severity || {}).map(([severity, count]) => (
                       <div key={severity} className="flex justify-between items-center">
                         {getSeverityBadge(severity)}
                         <span className="font-bold">{count as number}</span>
@@ -387,7 +387,7 @@ export default function RPADashboard() {
         {/* Portals Tab */}
         <TabsContent value="portals" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {rpaStatus?.portals_monitored?.map((portal: string) => (
+            {(rpaStatus as any)?.portals_monitored?.map((portal: string) => (
               <Card key={portal} data-testid={`portal-card-${portal.toLowerCase().replace(/\s+/g, '-')}`}>
                 <CardHeader>
                   <CardTitle className="text-lg">{portal}</CardTitle>
@@ -403,7 +403,7 @@ export default function RPADashboard() {
                   <div className="flex justify-between items-center">
                     <span className="text-sm">Mudanças (30d)</span>
                     <span className="font-medium">
-                      {rpaStats?.changes_by_portal?.[portal] || 0}
+                      {(rpaStats as any)?.changes_by_portal?.[portal] || 0}
                     </span>
                   </div>
                   <Separator />
