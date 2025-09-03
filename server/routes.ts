@@ -463,7 +463,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         {
           id: "change-001",
           portal_name: "Econet",
-          url: "https://www.econet.com.br/legislacao/federal/in-rfb-2175-2025",
+          url: "https://www.econeteditora.com.br/legislacao/federal/in-rfb-2175-2025",
           title: "Instrução Normativa RFB nº 2.175/2025 - Alteração ICMS ST",
           change_type: "MODIFIED",
           severity: "critical",

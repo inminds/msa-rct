@@ -42,7 +42,7 @@ export default function RPA() {
     {
       id: "econet",
       name: "Econet Online",
-      url: "https://econet.com.br",
+      url: "https://www.econeteditora.com.br",
       status: "active",
       lastCheck: new Date("2024-01-27T14:23:00"),
       changesDetected: 3,

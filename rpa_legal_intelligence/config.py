@@ -53,12 +53,12 @@ class RPAConfig:
 PORTALS: Dict[str, PortalConfig] = {
     "econet": PortalConfig(
         name="Econet",
-        url="https://www.econet.com.br",
-        login_url="https://www.econet.com.br/Login",
+        url="https://www.econeteditora.com.br",
+        login_url="https://www.econeteditora.com.br/Login",
         content_urls=[
-            "https://www.econet.com.br/noticias/tributario",
-            "https://www.econet.com.br/legislacao/federal",
-            "https://www.econet.com.br/legislacao/estadual"
+            "https://www.econeteditora.com.br/noticias/tributario",
+            "https://www.econeteditora.com.br/legislacao/federal",
+            "https://www.econeteditora.com.br/legislacao/estadual"
         ],
         selectors={
             "login_form": "form#loginForm",
