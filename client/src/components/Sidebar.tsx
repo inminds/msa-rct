@@ -10,6 +10,7 @@ import {
   Bot,
   User,
   LogOut,
+  Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -22,6 +23,7 @@ const navigation = [
   { name: "Relatórios", href: "/reports", icon: BarChart3 },
   { name: "Usuários", href: "/users", icon: Users },
   { name: "RPA Legislação", href: "/rpa", icon: Bot },
+  { name: "Monitoramento RPA", href: "/rpa-dashboard", icon: Activity },
 ];
 
 export function Sidebar() {

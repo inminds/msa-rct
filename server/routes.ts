@@ -389,6 +389,211 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ====== RPA LEGAL INTELLIGENCE INTEGRATION ENDPOINTS ======
+
+  // RPA webhook endpoint for legal changes
+  app.post("/api/rpa/webhook/legal-changes", async (req, res) => {
+    try {
+      console.log("🔔 RPA Legal Change Webhook received:", {
+        portal: req.body.portal,
+        severity: req.body.severity,
+        title: req.body.title
+      });
+      
+      const changeData = req.body;
+      
+      // Log critical changes with more detail
+      if (changeData.severity === 'critical' || changeData.severity === 'high') {
+        console.log(`🚨 CRITICAL/HIGH Legal change: ${changeData.portal} - ${changeData.summary}`);
+      }
+      
+      // TODO: Store in legal_changes table when integrated with RPA database
+      // await storage.storeLegalChange(changeData);
+      
+      res.json({ 
+        success: true, 
+        message: "Legal change webhook processed successfully",
+        timestamp: new Date().toISOString(),
+        change_id: changeData.id || `change-${Date.now()}`
+      });
+    } catch (error) {
+      console.error("❌ Error processing legal change webhook:", error);
+      res.status(500).json({ 
+        success: false, 
+        message: "Failed to process legal change webhook",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // RPA status and monitoring endpoints
+  app.get("/api/rpa/status", async (req, res) => {
+    try {
+      // Mock status for now - will integrate with actual RPA database
+      const status = {
+        service_status: "active",
+        last_execution: new Date().toISOString(),
+        portals_monitored: ["Econet", "Receita Federal do Brasil"],
+        total_executions_today: 3,
+        successful_executions_today: 2,
+        changes_detected_today: 1,
+        critical_changes_pending: 0,
+        next_scheduled_execution: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), // 6 hours
+        system_health: "healthy"
+      };
+      
+      res.json(status);
+    } catch (error) {
+      console.error("Error fetching RPA status:", error);
+      res.status(500).json({ 
+        service_status: "error",
+        message: "Failed to fetch RPA status",
+        system_health: "unhealthy"
+      });
+    }
+  });
+
+  // Recent legal changes from RPA
+  app.get("/api/rpa/recent-changes", async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+      
+      // Mock data for now - will integrate with RPA database
+      const changes = [
+        {
+          id: "change-001",
+          portal_name: "Econet",
+          url: "https://www.econet.com.br/legislacao/federal/in-rfb-2175-2025",
+          title: "Instrução Normativa RFB nº 2.175/2025 - Alteração ICMS ST",
+          change_type: "MODIFIED",
+          severity: "critical",
+          detected_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+          diff_summary: "Alteração nas alíquotas de ICMS ST para produtos industrializados. NCMs 84.83, 87.03 e 22.01 afetados.",
+          keywords: ["icms", "substituição tributária", "alíquota", "ncm"]
+        },
+        {
+          id: "change-002", 
+          portal_name: "Receita Federal do Brasil",
+          url: "https://www.gov.br/receitafederal/portaria-me-456-2025",
+          title: "Portaria ME nº 456/2025 - Prazo DEFIS 2025",
+          change_type: "NEW",
+          severity: "high",
+          detected_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+          diff_summary: "Novo prazo para entrega da DEFIS 2025: 31/03/2025. Multa por atraso: R$ 500,00.",
+          keywords: ["defis", "prazo", "multa", "simples nacional"]
+        }
+      ];
+      
+      res.json({ 
+        changes: changes.slice(0, limit),
+        total: changes.length,
+        last_updated: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Error fetching recent changes:", error);
+      res.status(500).json({ 
+        changes: [],
+        message: "Failed to fetch recent changes" 
+      });
+    }
+  });
+
+  // Critical legal changes only
+  app.get("/api/rpa/critical-changes", async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 5;
+      
+      // Mock critical changes - will integrate with RPA database
+      const criticalChanges = [
+        {
+          id: "critical-001",
+          portal_name: "Econet",
+          title: "🚨 Alíquota ICMS ST alterada para NCM 84.83",
+          severity: "critical",
+          detected_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+          impact_description: "Mudança afeta cálculo de impostos para máquinas industriais",
+          requires_immediate_action: true
+        }
+      ];
+      
+      res.json({
+        critical_changes: criticalChanges.slice(0, limit),
+        total_critical: criticalChanges.length,
+        alert_level: criticalChanges.length > 0 ? "high" : "normal"
+      });
+    } catch (error) {
+      console.error("Error fetching critical changes:", error);
+      res.status(500).json({ 
+        critical_changes: [],
+        message: "Failed to fetch critical changes" 
+      });
+    }
+  });
+
+  // RPA execution statistics
+  app.get("/api/rpa/statistics", async (req, res) => {
+    try {
+      const period = req.query.period || "30d";
+      
+      // Mock statistics - will integrate with RPA database
+      const stats = {
+        period,
+        total_executions: 89,
+        successful_executions: 82,
+        failed_executions: 7,
+        success_rate: "92.1%",
+        total_changes_detected: 23,
+        changes_by_severity: {
+          critical: 3,
+          high: 8, 
+          medium: 9,
+          low: 3
+        },
+        changes_by_portal: {
+          "Econet": 15,
+          "Receita Federal do Brasil": 8
+        },
+        avg_execution_time_minutes: 4.2,
+        last_30_days_trend: "stable",
+        alerts_sent: 18,
+        alert_response_rate: "94.4%"
+      };
+      
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching RPA statistics:", error);
+      res.status(500).json({ message: "Failed to fetch RPA statistics" });
+    }
+  });
+
+  // Manual trigger for RPA execution
+  app.post("/api/rpa/execute", isAuthenticated, async (req: any, res) => {
+    try {
+      const { portal_name, force_execution } = req.body;
+      const userId = req.user.claims.sub;
+      
+      console.log(`🚀 Manual RPA execution requested by user ${userId} for portal: ${portal_name}`);
+      
+      // This would trigger actual RPA execution
+      // For now, return success response
+      const executionId = `exec-${Date.now()}`;
+      
+      res.json({
+        success: true,
+        execution_id: executionId,
+        message: `RPA execution started for ${portal_name || 'all portals'}`,
+        estimated_duration_minutes: 5,
+        status_check_url: `/api/rpa/executions/${executionId}`
+      });
+    } catch (error) {
+      console.error("Error triggering RPA execution:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to trigger RPA execution" 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

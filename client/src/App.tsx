@@ -14,6 +14,7 @@ import TaxAnalysis from "@/pages/TaxAnalysis";
 import Reports from "@/pages/Reports";
 import Users from "@/pages/Users";
 import RPA from "@/pages/RPA";
+import RPADashboard from "@/pages/RPADashboard";
 import NotFound from "@/pages/not-found";
 
 /** Redirect simples para wouter */
@@ -42,6 +43,7 @@ function Router() {
       <Route path="/reports" component={Reports} />
       <Route path="/users" component={Users} />
       <Route path="/rpa" component={RPA} />
+      <Route path="/rpa-dashboard" component={RPADashboard} />
 
       {/* 404 */}
       <Route component={NotFound} />
