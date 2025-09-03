@@ -1,0 +1,51 @@
+Olá, Replit! 👋
+
+Estamos finalizando o processo de migração do nosso projeto **TributAI**, cuja demo foi desenvolvida aqui na plataforma.
+
+### Solicitamos sua ajuda para duas frentes:
+
+---
+
+## ✅ 1. Informações Técnicas sobre a Demo já construída
+
+Poderia, por favor, nos detalhar:
+
+- Em qual tecnologia exata o projeto *TributAI* foi desenvolvido? (ex: Node.js + Express? Flask? Django? PostgreSQL? etc.)
+- Quais são os **requisitos mínimos de infraestrutura** para hospedar esse projeto em outro ambiente fora do Replit?
+    - Linguagem
+    - Versões
+    - Dependências
+    - Como o projeto é iniciado (ex: `npm run`, `dotnet`, `python app.py`, etc.)
+    - Se precisa de banco? Qual?
+    - Requisitos de sistema operacional, runtime ou serviços auxiliares?
+
+Nosso objetivo é implantar a aplicação na **infraestrutura da Machado Schutz**, mas ainda **não sabemos qual é a cloud usada (Azure, AWS, on-premises, etc.)**, por isso precisamos de uma resposta **agnóstica de cloud**, baseada apenas nas **tecnologias necessárias** para executar o projeto localmente ou em container, se possível.
+
+---
+
+## 🤖 2. Possibilidade de desenvolvimento do módulo RPA
+
+Temos também um segundo módulo que ainda não foi desenvolvido, e gostaríamos de saber se você poderia nos ajudar com isso:
+
+### Descrição:
+- **Linguagem:** Python
+- **Objetivo:** Coletar e monitorar alterações em legislações fiscais
+- **Etapas do RPA:**
+    1. Login supervisionado em portais com CAPTCHA (ex: Econet)
+    2. Scraping com `Selenium` + `BeautifulSoup`
+    3. Comparação de conteúdo com `diff` entre versões
+    4. Geração de alertas (email ou painel simples)
+
+### Perguntas:
+- Você consegue desenvolver esse módulo RPA para nós aqui dentro do Replit?
+- Caso **sim**, quais são os **requisitos mínimos de infraestrutura** para executar esse RPA fora do Replit?
+    - Pode ser hospedado em máquina virtual, serviço web, ou precisa de máquina física?
+    - Pode rodar agendado (ex: cron job)?
+    - Precisa de navegador real instalado? (ChromeDriver etc.)
+    - Qual o consumo médio esperado? Alguma limitação conhecida?
+
+---
+
+Nosso objetivo final é integrar ambos os módulos (APP + RPA) na estrutura da Machado Schutz, com segurança e autonomia.
+
+Agradecemos imensamente pelo suporte até aqui! 🚀
