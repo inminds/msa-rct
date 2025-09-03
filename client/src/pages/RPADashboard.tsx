@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { Sidebar } from "@/components/Sidebar";
+import { TopBar } from "@/components/TopBar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -110,25 +112,28 @@ export default function RPADashboard() {
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-6" data-testid="rpa-dashboard">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="page-title">RPA Legal Intelligence</h1>
-          <p className="text-muted-foreground">
-            Monitoramento automático de mudanças em legislações tributárias
-          </p>
-        </div>
-        <div className="space-x-2">
-          <Button
-            onClick={() => executeRPA()}
-            disabled={rpaStatus?.service_status === 'running'}
-            data-testid="button-execute-all"
-          >
-            <Play className="w-4 h-4 mr-2" />
-            Executar RPA
-          </Button>
-        </div>
-      </div>
+    <div className="min-h-screen flex bg-gray-50">
+      <Sidebar />
+      
+      <main className="flex-1 overflow-auto">
+        <TopBar
+          title="RPA Legal Intelligence"
+          subtitle="Monitoramento automático de mudanças em legislações tributárias"
+        />
+
+        <div className="p-6 space-y-6" data-testid="rpa-dashboard">
+          <div className="flex justify-between items-center">
+            <div className="space-x-2">
+              <Button
+                onClick={() => executeRPA()}
+                disabled={(rpaStatus as any)?.service_status === 'running'}
+                data-testid="button-execute-all"
+              >
+                <Play className="w-4 h-4 mr-2" />
+                Executar RPA
+              </Button>
+            </div>
+          </div>
 
       {/* Critical Alerts */}
       {(criticalChanges as any)?.critical_changes?.length > 0 && (
@@ -423,6 +428,8 @@ export default function RPADashboard() {
           </div>
         </TabsContent>
       </Tabs>
+        </div>
+      </main>
     </div>
   );
 }
