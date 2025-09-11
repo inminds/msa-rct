@@ -167,7 +167,7 @@ def generate_demo_report(results):
 def main():
     """Função principal da demonstração"""
     print("🚀 RPA LEGAL INTELLIGENCE - DEMONSTRAÇÃO E TESTE")
-    print("Machado Schutz Advogados & InMinds Technology")
+    print("Machado Schütz Advogados & InMinds Technology")
     print("="*60)
     
     show_system_info()

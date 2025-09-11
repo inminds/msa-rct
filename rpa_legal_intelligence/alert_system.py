@@ -108,7 +108,7 @@ class AlertSystem:
                 <hr>
                 <p style="color: #666; font-size: 12px;">
                     Este alerta foi gerado automaticamente pelo sistema RPA Legal Intelligence.<br>
-                    Machado Schutz Advogados - Sistema TributAI
+                    Machado Schütz Advogados - Sistema TributAI
                 </p>
             </body>
             </html>

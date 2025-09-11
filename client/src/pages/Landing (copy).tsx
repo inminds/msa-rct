@@ -60,7 +60,7 @@ export default function Landing() {
         <div className="text-center">
           <Card className="max-w-md mx-auto">
             <CardContent className="p-8">
-              <h2 className="text-2xl font-bold mb-4">Machado Schutz Advogados</h2>
+              <h2 className="text-2xl font-bold mb-4">Machado Schütz Advogados</h2>
               <p className="text-gray-600 mb-6">
                 Faça login para acessar a plataforma de diagnóstico tributário
               </p>

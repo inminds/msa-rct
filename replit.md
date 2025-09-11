@@ -2,7 +2,7 @@
 
 ## Overview
 
-TributAI is a comprehensive tax automation platform designed for Machado Schutz Advogados (MSH) that transforms manual tax diagnosis processes into an intelligent digital solution. The system processes fiscal files (SPED, XML, CSV), extracts NCM (Nomenclatura Comum do Mercosul) codes, and automatically calculates applicable taxes including ICMS, IPI, PIS, and COFINS based on jurisdiction (federal vs state).
+TributAI is a comprehensive tax automation platform designed for Machado Schütz Advogados that transforms manual tax diagnosis processes into an intelligent digital solution. The system processes fiscal files (SPED, XML, CSV), extracts NCM (Nomenclatura Comum do Mercosul) codes, and automatically calculates applicable taxes including ICMS, IPI, PIS, and COFINS based on jurisdiction (federal vs state).
 
 The platform provides automated tax analysis, validation workflows, and comprehensive reporting to streamline tax compliance and reduce manual effort in tax diagnosis processes.
 

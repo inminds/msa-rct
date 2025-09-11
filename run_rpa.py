@@ -17,7 +17,7 @@ from rpa_legal_intelligence.main import main
 if __name__ == "__main__":
     print("=" * 60)
     print("RPA Legal Intelligence - Sistema de Monitoramento Legal")
-    print("Machado Schutz Advogados & InMinds Technology")
+    print("Machado Schütz Advogados & InMinds Technology")
     print("=" * 60)
     print(f"Iniciado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     print()

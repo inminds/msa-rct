@@ -40,7 +40,7 @@ export function Sidebar() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-gray-900">TributAI</h1>
-            <p className="text-sm text-gray-500">MSH Advogados</p>
+            <p className="text-sm text-gray-500">Machado Schütz Advogados</p>
           </div>
         </div>
       </div>
