@@ -6,3 +6,9 @@ id = "uAPCQtoBy9Kgzrwve7QZb"
 uri = "file://ONBOARDING.md"
 type = "text"
 title = "TributAI — Documento de Onboarding"
+
+[[outputs]]
+id = "5S5JTrYrzhRXwexgVnVZu"
+uri = "file://DOCUMENTO_PROJETO_TRIBUTAI.md"
+type = "text"
+title = "TributAI — Documento Completo de Projeto (Cliente)"
