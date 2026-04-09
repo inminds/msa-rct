@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "uAPCQtoBy9Kgzrwve7QZb"
+uri = "file://ONBOARDING.md"
+type = "text"
+title = "TributAI — Documento de Onboarding"
