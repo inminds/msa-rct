@@ -167,7 +167,7 @@ const upload = multer({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const isDev = process.env.NODE_ENV === 'development';
-  
+
   // Auth middleware
   if (!isDev) {
     await setupAuth(app);
@@ -272,13 +272,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.claims.sub;
       const file = req.file;
-      
+
       if (!file) {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
       const { fileType, description } = req.body;
-      
+
       // Validate input
       const uploadData = insertUploadSchema.parse({
         filename: file.originalname,
@@ -367,7 +367,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // The demo data is already built into the storage layer
       // This endpoint just confirms the demo data is active
-      res.json({ 
+      res.json({
         message: "Dados de demonstração já estão ativos",
         description: "O sistema já está usando dados de demonstração realistas que correspondem à preview mostrada.",
         data: {
@@ -415,27 +415,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         severity: req.body.severity,
         title: req.body.title
       });
-      
+
       const changeData = req.body;
-      
+
       // Log critical changes with more detail
       if (changeData.severity === 'critical' || changeData.severity === 'high') {
         console.log(`🚨 CRITICAL/HIGH Legal change: ${changeData.portal} - ${changeData.summary}`);
       }
-      
+
       // TODO: Store in legal_changes table when integrated with RPA database
       // await storage.storeLegalChange(changeData);
-      
-      res.json({ 
-        success: true, 
+
+      res.json({
+        success: true,
         message: "Legal change webhook processed successfully",
         timestamp: new Date().toISOString(),
         change_id: changeData.id || `change-${Date.now()}`
       });
     } catch (error) {
       console.error("❌ Error processing legal change webhook:", error);
-      res.status(500).json({ 
-        success: false, 
+      res.status(500).json({
+        success: false,
         message: "Failed to process legal change webhook",
         error: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -457,11 +457,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         next_scheduled_execution: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), // 6 hours
         system_health: "healthy"
       };
-      
+
       res.json(status);
     } catch (error) {
       console.error("Error fetching RPA status:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         service_status: "error",
         message: "Failed to fetch RPA status",
         system_health: "unhealthy"
@@ -473,7 +473,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/rpa/recent-changes", async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 10;
-      
+
       // Mock data for now - will integrate with RPA database
       const changes = [
         {
@@ -488,7 +488,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           keywords: ["icms", "substituição tributária", "alíquota", "ncm"]
         },
         {
-          id: "change-002", 
+          id: "change-002",
           portal_name: "Receita Federal do Brasil",
           url: "https://www.gov.br/receitafederal/portaria-me-456-2025",
           title: "Portaria ME nº 456/2025 - Prazo DEFIS 2025",
@@ -499,17 +499,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           keywords: ["defis", "prazo", "multa", "simples nacional"]
         }
       ];
-      
-      res.json({ 
+
+      res.json({
         changes: changes.slice(0, limit),
         total: changes.length,
         last_updated: new Date().toISOString()
       });
     } catch (error) {
       console.error("Error fetching recent changes:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         changes: [],
-        message: "Failed to fetch recent changes" 
+        message: "Failed to fetch recent changes"
       });
     }
   });
@@ -518,7 +518,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/rpa/critical-changes", async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 5;
-      
+
       // Mock critical changes - will integrate with RPA database
       const criticalChanges = [
         {
@@ -531,7 +531,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           requires_immediate_action: true
         }
       ];
-      
+
       res.json({
         critical_changes: criticalChanges.slice(0, limit),
         total_critical: criticalChanges.length,
@@ -539,9 +539,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Error fetching critical changes:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         critical_changes: [],
-        message: "Failed to fetch critical changes" 
+        message: "Failed to fetch critical changes"
       });
     }
   });
@@ -550,7 +550,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/rpa/statistics", async (req, res) => {
     try {
       const period = req.query.period || "30d";
-      
+
       // Mock statistics - will integrate with RPA database
       const stats = {
         period,
@@ -561,7 +561,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         total_changes_detected: 23,
         changes_by_severity: {
           critical: 3,
-          high: 8, 
+          high: 8,
           medium: 9,
           low: 3
         },
@@ -574,7 +574,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         alerts_sent: 18,
         alert_response_rate: "94.4%"
       };
-      
+
       res.json(stats);
     } catch (error) {
       console.error("Error fetching RPA statistics:", error);
@@ -587,13 +587,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { portal_name, force_execution } = req.body;
       const userId = req.user.claims.sub;
-      
+
       console.log(`🚀 Manual RPA execution requested by user ${userId} for portal: ${portal_name}`);
-      
+
       // This would trigger actual RPA execution
       // For now, return success response
       const executionId = `exec-${Date.now()}`;
-      
+
       res.json({
         success: true,
         execution_id: executionId,
@@ -603,9 +603,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Error triggering RPA execution:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         success: false,
-        message: "Failed to trigger RPA execution" 
+        message: "Failed to trigger RPA execution"
       });
     }
   });
