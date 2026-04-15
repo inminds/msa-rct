@@ -16,27 +16,30 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, isNull, isNotNull } from "drizzle-orm";
+import { randomUUID } from "crypto";
 
 export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
-  
+
   // Upload operations
   createUpload(upload: InsertUpload & { userId: string }): Promise<Upload>;
   getUploadsByUser(userId: string): Promise<Upload[]>;
   getUpload(id: string): Promise<Upload | undefined>;
   updateUploadStatus(id: string, status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'ERROR', errorMessage?: string): Promise<void>;
-  
+  deleteUpload(id: string): Promise<void>;
+  clearAllData(): Promise<void>;
+
   // NCM operations
   createNCMItem(ncmItem: InsertNCMItem): Promise<NCMItem>;
   getNCMItemsByUpload(uploadId: string): Promise<NCMItem[]>;
-  
+
   // Tribute operations
   createTribute(tribute: InsertTribute): Promise<Tribute>;
   getTributesByNCMItem(ncmItemId: string): Promise<Tribute[]>;
   validateTribute(tributeId: string, validatedBy: string): Promise<void>;
-  
+
   // Dashboard statistics
   getDashboardStats(userId?: string): Promise<{
     processedFiles: number;
@@ -44,11 +47,11 @@ export interface IStorage {
     completedAnalyses: number;
     pendingValidation: number;
   }>;
-  
+
   // Recent uploads and analyses
   getRecentUploads(limit?: number): Promise<(Upload & { user: User; ncmItemsCount: number })[]>;
   getRecentAnalyses(limit?: number): Promise<(NCMItem & { upload: Upload; tributes: Tribute[] })[]>;
-  
+
   // Tax distribution
   getTaxDistribution(): Promise<{
     icms: number;
@@ -56,7 +59,7 @@ export interface IStorage {
     pis: number;
     cofins: number;
   }>;
-  
+
   // Jurisdiction distribution
   getJurisdictionDistribution(): Promise<{
     federal: number;
@@ -76,20 +79,20 @@ export class DatabaseStorage implements IStorage {
   async upsertUser(userData: UpsertUser): Promise<User> {
     const [user] = await db
       .insert(users)
-      .values(userData)
+      .values({ id: randomUUID(), createdAt: new Date(), updatedAt: new Date(), ...userData })
       .onConflictDoUpdate({
         target: users.id,
-        set: {
-          ...userData,
-          updatedAt: new Date(),
-        },
+        set: { ...userData, updatedAt: new Date() },
       })
       .returning();
     return user;
   }
 
   async createUpload(upload: InsertUpload & { userId: string }): Promise<Upload> {
-    const [created] = await db.insert(uploads).values(upload).returning();
+    const [created] = await db
+      .insert(uploads)
+      .values({ id: randomUUID(), uploadedAt: new Date(), ...upload })
+      .returning();
     return created;
   }
 
@@ -109,8 +112,8 @@ export class DatabaseStorage implements IStorage {
   async updateUploadStatus(id: string, status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'ERROR', errorMessage?: string): Promise<void> {
     await db
       .update(uploads)
-      .set({ 
-        status, 
+      .set({
+        status,
         errorMessage,
         processedAt: status === 'COMPLETED' ? new Date() : undefined
       })
@@ -118,7 +121,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createNCMItem(ncmItem: InsertNCMItem): Promise<NCMItem> {
-    const [created] = await db.insert(ncmItems).values(ncmItem).returning();
+    const [created] = await db
+      .insert(ncmItems)
+      .values({ id: randomUUID(), createdAt: new Date(), ...ncmItem })
+      .returning();
     return created;
   }
 
@@ -131,7 +137,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTribute(tribute: InsertTribute): Promise<Tribute> {
-    const [created] = await db.insert(tributes).values(tribute).returning();
+    const [created] = await db
+      .insert(tributes)
+      .values({ id: randomUUID(), ...tribute })
+      .returning();
     return created;
   }
 
@@ -275,6 +284,32 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(ncmItems, eq(tributes.ncmItemId, ncmItems.id))
       .where(eq(ncmItems.ncmCode, ncmCode));
     return (result?.count ?? 0) > 0;
+  }
+
+  async deleteUpload(id: string): Promise<void> {
+    // Delete tributes associated with NCM items from this upload
+    const ncmItemsToDelete = await db
+      .select({ id: ncmItems.id })
+      .from(ncmItems)
+      .where(eq(ncmItems.uploadId, id));
+
+    for (const ncmItem of ncmItemsToDelete) {
+      await db.delete(tributes).where(eq(tributes.ncmItemId, ncmItem.id));
+    }
+
+    // Delete NCM items from this upload
+    await db.delete(ncmItems).where(eq(ncmItems.uploadId, id));
+
+    // Delete the upload itself
+    await db.delete(uploads).where(eq(uploads.id, id));
+  }
+
+  async clearAllData(): Promise<void> {
+    // Delete in correct order due to foreign key constraints
+    await db.delete(tributes);
+    await db.delete(ncmItems);
+    await db.delete(uploads);
+    console.log('🗑️  All data cleared from database');
   }
 }
 

@@ -391,6 +391,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete upload by ID
+  app.delete('/api/uploads/:id', isAuthenticated, async (req, res) => {
+    try {
+      const upload = await storage.getUpload(req.params.id);
+      if (!upload) {
+        return res.status(404).json({ message: "Upload not found" });
+      }
+
+      await storage.deleteUpload(req.params.id);
+      res.json({ message: "Upload deleted successfully", id: req.params.id });
+    } catch (error) {
+      console.error("Error deleting upload:", error);
+      res.status(500).json({ message: "Failed to delete upload" });
+    }
+  });
+
+  // Clear all database (development only)
+  app.post('/api/admin/clear-database', async (req, res) => {
+    if (isDev) {
+      try {
+        await storage.clearAllData();
+        res.json({ message: "✅ All database data cleared successfully" });
+      } catch (error) {
+        console.error("Error clearing database:", error);
+        res.status(500).json({ message: "Failed to clear database" });
+      }
+    } else {
+      res.status(403).json({ message: "This endpoint is only available in development mode" });
+    }
+  });
+
   // Demo data generation endpoint (public for demo purposes)
   app.post('/api/generate-demo-data', async (req: any, res) => {
     try {
@@ -646,41 +677,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
 // Async file processing function
 async function processFileAsync(uploadId: string, fileContent: string, fileType: 'SPED' | 'XML' | 'CSV') {
   try {
-    // Update status to processing
+    console.log(`[processFile] Starting: uploadId=${uploadId}, type=${fileType}, contentLength=${fileContent.length}`);
+
     await storage.updateUploadStatus(uploadId, 'PROCESSING');
+    console.log(`[processFile] Status → PROCESSING`);
 
-    // Process the file
     const processedItems = await FileProcessor.processFile(fileContent, fileType);
+    console.log(`[processFile] Parsed ${processedItems.length} NCM items from file`);
 
-    // Create NCM items and calculate taxes (incremental: skip NCMs that already have tribute data)
     for (const item of processedItems) {
-      const ncmItem = await storage.createNCMItem({
-        ...item,
-        uploadId,
-      });
+      const ncmItem = await storage.createNCMItem({ ...item, uploadId });
+      console.log(`[processFile] NCM saved: ${item.ncmCode}`);
 
-      // Incremental ingestion: only calculate taxes if this NCM has no existing tribute data
       const alreadyHasData = await storage.hasExistingTributeData(item.ncmCode);
       if (alreadyHasData) {
+        console.log(`[processFile] NCM ${item.ncmCode} already has tribute data, skipping`);
         continue;
       }
 
-      // Calculate taxes for this NCM
       const taxes = await TaxCalculator.calculateAllTaxes(item.ncmCode);
-
-      // Create tribute records
       for (const tax of taxes) {
-        await storage.createTribute({
-          ...tax,
-          ncmItemId: ncmItem.id,
-        });
+        await storage.createTribute({ ...tax, ncmItemId: ncmItem.id });
       }
     }
 
-    // Update status to completed
     await storage.updateUploadStatus(uploadId, 'COMPLETED');
+    console.log(`[processFile] Done: uploadId=${uploadId} → COMPLETED`);
   } catch (error) {
-    console.error("Error processing file:", error);
-    await storage.updateUploadStatus(uploadId, 'ERROR', error instanceof Error ? error.message : 'Unknown error');
+    console.error(`[processFile] ERROR on uploadId=${uploadId}:`, error);
+    try {
+      await storage.updateUploadStatus(uploadId, 'ERROR', error instanceof Error ? error.message : 'Unknown error');
+    } catch (updateError) {
+      console.error(`[processFile] Failed to update status to ERROR:`, updateError);
+    }
   }
 }
