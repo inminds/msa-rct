@@ -12,25 +12,31 @@ async function generateDemoData(userId: string): Promise<void> {
   // Create demo uploads
   const uploads = [
     {
+      id: `upload-${Date.now()}-1`,
       filename: "sped_fiscal_202401.txt",
       fileType: "SPED" as const,
       description: "SPED Fiscal • 2.1 MB • Enviado por Carlos Mendes",
       userId,
       status: "PROCESSING" as const,
+      uploadedAt: new Date(),
     },
     {
+      id: `upload-${Date.now()}-2`,
       filename: "nfe_lote_347.xml",
       fileType: "XML" as const,
       description: "XML NFe • 856 KB • Enviado por Ana Silva",
       userId,
       status: "COMPLETED" as const,
+      uploadedAt: new Date(),
     },
     {
+      id: `upload-${Date.now()}-3`,
       filename: "produtos_cliente_abc.csv",
       fileType: "CSV" as const,
       description: "CSV Produtos • 2.3 MB • Enviado por Roberto Santos",
       userId,
       status: "PENDING" as const,
+      uploadedAt: new Date(),
     },
   ];
 
@@ -43,28 +49,34 @@ async function generateDemoData(userId: string): Promise<void> {
   // Create demo NCM items
   const ncmItems = [
     {
+      id: `ncm-${Date.now()}-1`,
       uploadId: createdUploads[1].id, // XML file
       ncmCode: "84483000",
       productName: "Máquinas de impressão offset",
       description: "Equipamentos gráficos industriais",
       quantity: 2,
       unitValue: 125000.00,
+      createdAt: new Date(),
     },
     {
+      id: `ncm-${Date.now()}-2`,
       uploadId: createdUploads[1].id,
       ncmCode: "22010000",
       productName: "Cerveja de malte",
       description: "Bebidas alcoólicas fermentadas",
       quantity: 1000,
       unitValue: 3.50,
+      createdAt: new Date(),
     },
     {
+      id: `ncm-${Date.now()}-3`,
       uploadId: createdUploads[1].id,
       ncmCode: "87032110",
       productName: "Automóveis de passeio",
       description: "Veículos com motor 1.0 a 1.5",
       quantity: 5,
       unitValue: 45000.00,
+      createdAt: new Date(),
     },
   ];
 
@@ -78,6 +90,7 @@ async function generateDemoData(userId: string): Promise<void> {
   const tributes = [
     // Máquinas de impressão offset
     {
+      id: `tribute-${Date.now()}-1`,
       ncmItemId: createdNCMItems[0].id,
       type: "ICMS" as const,
       jurisdiction: "ESTADUAL" as const,
@@ -87,6 +100,7 @@ async function generateDemoData(userId: string): Promise<void> {
       validatedBy: userId,
     },
     {
+      id: `tribute-${Date.now()}-2`,
       ncmItemId: createdNCMItems[0].id,
       type: "PIS" as const,
       jurisdiction: "FEDERAL" as const,
@@ -97,6 +111,7 @@ async function generateDemoData(userId: string): Promise<void> {
     },
     // Cerveja de malte
     {
+      id: `tribute-${Date.now()}-3`,
       ncmItemId: createdNCMItems[1].id,
       type: "ICMS" as const,
       jurisdiction: "ESTADUAL" as const,
@@ -104,6 +119,7 @@ async function generateDemoData(userId: string): Promise<void> {
       calculatedValue: 875.00,
     },
     {
+      id: `tribute-${Date.now()}-4`,
       ncmItemId: createdNCMItems[1].id,
       type: "PIS" as const,
       jurisdiction: "FEDERAL" as const,
@@ -111,6 +127,7 @@ async function generateDemoData(userId: string): Promise<void> {
       calculatedValue: 73.50,
     },
     {
+      id: `tribute-${Date.now()}-5`,
       ncmItemId: createdNCMItems[1].id,
       type: "COFINS" as const,
       jurisdiction: "FEDERAL" as const,
@@ -119,6 +136,7 @@ async function generateDemoData(userId: string): Promise<void> {
     },
     // Automóveis de passeio
     {
+      id: `tribute-${Date.now()}-6`,
       ncmItemId: createdNCMItems[2].id,
       type: "ICMS" as const,
       jurisdiction: "ESTADUAL" as const,
@@ -128,6 +146,7 @@ async function generateDemoData(userId: string): Promise<void> {
       validatedBy: userId,
     },
     {
+      id: `tribute-${Date.now()}-7`,
       ncmItemId: createdNCMItems[2].id,
       type: "PIS" as const,
       jurisdiction: "FEDERAL" as const,
@@ -135,6 +154,7 @@ async function generateDemoData(userId: string): Promise<void> {
       calculatedValue: 3712.50,
     },
     {
+      id: `tribute-${Date.now()}-8`,
       ncmItemId: createdNCMItems[2].id,
       type: "COFINS" as const,
       jurisdiction: "FEDERAL" as const,
@@ -173,6 +193,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     await setupAuth(app);
   } else {
     // Development mode: simple mock auth
+    // Ensure dev user exists in the database (foreign key requirement)
+    await storage.upsertUser({
+      id: 'dev-user-123',
+      email: 'dev@local.test',
+      firstName: 'Dev',
+      lastName: 'User',
+      role: 'ADMIN',
+    });
+
     app.use((req: any, res, next) => {
       req.user = {
         claims: {
@@ -182,7 +211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       next();
     });
-    console.log('📝 Dev mode: Using mock authentication');
+    console.log('📝 Dev mode: Using mock authentication (user: dev@local.test)');
   }
 
   // Auth routes

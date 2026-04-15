@@ -40,8 +40,8 @@ export const users = tableFactory("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   role: varchar("role").default("USER"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at"),
+  updatedAt: timestamp("updated_at"),
 });
 
 // Upload table
@@ -50,7 +50,7 @@ export const uploads = tableFactory("uploads", {
   filename: text("filename").notNull(),
   fileType: varchar("file_type").notNull(), // SPED, XML, CSV
   description: text("description"),
-  uploadedAt: timestamp("uploaded_at").defaultNow(),
+  uploadedAt: timestamp("uploaded_at"),
   userId: varchar("user_id").notNull().references(() => users.id),
   status: varchar("status").default('PENDING'), // PENDING, PROCESSING, COMPLETED, ERROR
   processedAt: timestamp("processed_at"),
@@ -64,7 +64,7 @@ export const ncmItems = tableFactory("ncm_items", {
   description: text("description"),
   productName: text("product_name"),
   uploadId: varchar("upload_id").notNull().references(() => uploads.id),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at"),
 });
 
 // Tributes table
@@ -87,7 +87,7 @@ export const lawChangeLogs = tableFactory("law_change_logs", {
   tribute: varchar("tribute").notNull(), // ICMS, IPI, PIS, COFINS
   jurisdiction: varchar("jurisdiction").notNull(), // FEDERAL, ESTADUAL
   description: text("description").notNull(),
-  detectedAt: timestamp("detected_at").defaultNow(),
+  detectedAt: timestamp("detected_at"),
   previousContent: text("previous_content"),
   newContent: text("new_content"),
   sourceUrl: text("source_url"),
