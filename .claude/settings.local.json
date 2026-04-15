@@ -2,7 +2,17 @@
   "permissions": {
     "allow": [
       "Bash(npx tsc:*)",
-      "Bash(node_modules/.bin/tsc --noEmit)"
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(python3 -c \"import openpyxl; print\\('ok'\\)\")",
+      "Bash(python -c \"import openpyxl; print\\('ok'\\)\")",
+      "Bash(ls /c/Python*)",
+      "Read(//c/Users/Administrador/AppData/Local/Programs/**)",
+      "Bash(command -v python3 python py pip3 pip)",
+      "Read(//c/ProgramData/chocolatey/**)",
+      "Read(//c/Users/Administrador/**)",
+      "Bash(npm list:*)",
+      "Bash(npm install:*)",
+      "Bash(npm init:*)"
     ]
   }
 }
