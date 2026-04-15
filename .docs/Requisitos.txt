@@ -1,0 +1,71 @@
+Requisitos Principais
+
+1. Upload de Arquivos
+Receber planilhas dos clientes com listas de NCMs. O sistema deve fazer ingestão incremental — NCMs já existentes na base não são rebuscados desnecessariamente.
+2. Varredura e Construção da Base de Dados (RPA/Bot)
+Claude acessa o Econet de forma automatizada, buscando tributação por NCM (PIS, Cofins, alíquotas, condições especiais — excluindo importação, exportação e CST). A varredura roda em calendário automático. Se alguém quiser disparar uma varredura manual/completa, o fluxo de aprovação entra em ação (ver item 5).
+3. Extração e Análise de NCMs
+Com base nos NCMs dos arquivos subidos, o sistema cruza com a base interna e aponta divergências ou pendências. Foco inicial: tributos federais (PIS e Cofins). ICMS/estadual fica para uma segunda fase por ser muito mais complexo (varia por estado).
+4. Histórico e Vigência das Informações
+Toda informação de tributação deve ser armazenada com data de início e fim de vigência. Prazo de retenção: 5 anos (período prescricional). Mudanças não sobrescrevem — ficam registradas com o marco temporal para permitir análise retroativa.
+5. Fluxo de Aprovação para Varredura Manual
+Solicitação de nova varredura vai primeiro para Thayssa (avalia necessidade com seu time) → se aprovada, vai para Yuri (aprovação final de custo) → só então executa. Isso existe para controlar consumo de tokens do Claude.
+6. Alertas de Mudança em NCMs
+Monitoramento dos sites (Receita Federal, Confaz, Sefaz, Econet) para detectar alterações de legislação/alíquota/classificação. Ao detectar mudança, dispara alerta e, idealmente, atualiza automaticamente as tabelas internas.
+7. Dashboard
+Visão geral do sistema, status das varreduras, NCMs analisados, etc.
+8. Gestão de Usuários
+Controle de quem pode fazer o quê: analisar, aprovar, exportar, etc.
+9. Exportação de Relatórios
+PDF, Excel, e possibilidade de conexão direta com o Excel do cliente (sem precisar exportar/colar manualmente todo mês).
+
+MVP (Primeira Entrega — ciclo de 2 semanas)
+
+Dashboard funcional
+Upload de arquivos (CSV/planilha de NCMs)
+Extração dos NCMs + varredura no Econet para montar a base
+Análise tributária federal (PIS e Cofins)
+Fluxo de aprovação de mudanças
+
+Para Depois
+
+Análise tributária estadual (ICMS — complexidade muito maior)
+Agente de chat para consulta conversacional da base de dados
+Integração com reforma tributária / transição para CBS
+
+
+Ponto de atenção técnico: A solução não precisa de API do Econet (que provavelmente não existe). O Claude navega o site via automação, lendo as páginas — é isso que consome tokens e justifica o fluxo de aprovação para varreduras não-programadas.
+
+
+
+🧩 RESUMO SIMPLES (o essencial mesmo)
+
+Se você tiver que explicar em 30 segundos:
+
+👉 O sistema precisa:
+
+Ler arquivos com NCM
+Buscar dados no Econet automaticamente
+Construir uma base incremental
+Comparar e analisar tributação (começando pelo federal)
+Alertar mudanças
+Manter histórico com vigência
+Controlar custo via aprovação
+
+
+
+Como fazer a varredura no Econet
+Opção 1 — Claude como "cérebro" + RPA como "braços" (recomendado)
+Essa é provavelmente a arquitetura mais robusta. Funciona assim:
+Um bot de automação (usando ferramentas como Playwright ou Selenium) navega o Econet, faz o login, busca cada NCM e captura o HTML da página. Esse conteúdo bruto é então enviado para o Claude, que lê, interpreta e extrai as informações tributárias relevantes (alíquotas, condições especiais, vigência, etc.) de forma estruturada para salvar no banco de dados.
+O Claude aqui age como o interpretador inteligente do conteúdo — ele é muito bom em ler páginas com estrutura irregular ou texto jurídico e extrair só o que importa.
+Opção 2 — Claude com Computer Use
+A Anthropic tem uma feature chamada Computer Use, onde o próprio Claude consegue controlar um navegador — clicar, navegar, preencher campos. Tecnicamente daria para o Claude fazer toda a varredura sozinho, sem um RPA separado.
+O ponto de atenção aqui é que o Computer Use ainda está em beta e pode ser menos estável para automações repetitivas e de larga escala. Para um processo crítico e com custo por execução, a Opção 1 tende a ser mais confiável.
+Opção 3 — API do Econet (se existir)
+Como foi levantado na reunião, vale checar novamente com o Econet se eles têm ou lançaram alguma API. Seria a forma mais limpa e barata — sem precisar navegar o site. Mas pela conversa, a expectativa é baixa.
+
+Minha recomendação
+A Opção 1 é o caminho mais sólido para o MVP. O Alejandro implementa o Playwright para navegar e capturar as páginas, e o Claude processa o conteúdo extraído. Isso separa bem as responsabilidades: a automação cuida da navegação e o Claude cuida da inteligência.
+
+talvez ter uma maquina virtual com um app rodando essa verificação

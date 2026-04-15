@@ -166,8 +166,24 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  const isDev = process.env.NODE_ENV === 'development';
+  
   // Auth middleware
-  await setupAuth(app);
+  if (!isDev) {
+    await setupAuth(app);
+  } else {
+    // Development mode: simple mock auth
+    app.use((req: any, res, next) => {
+      req.user = {
+        claims: {
+          sub: 'dev-user-123',
+          email: 'dev@local.test',
+        },
+      };
+      next();
+    });
+    console.log('📝 Dev mode: Using mock authentication');
+  }
 
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
@@ -607,16 +623,22 @@ async function processFileAsync(uploadId: string, fileContent: string, fileType:
     // Process the file
     const processedItems = await FileProcessor.processFile(fileContent, fileType);
 
-    // Create NCM items and calculate taxes
+    // Create NCM items and calculate taxes (incremental: skip NCMs that already have tribute data)
     for (const item of processedItems) {
       const ncmItem = await storage.createNCMItem({
         ...item,
         uploadId,
       });
 
+      // Incremental ingestion: only calculate taxes if this NCM has no existing tribute data
+      const alreadyHasData = await storage.hasExistingTributeData(item.ncmCode);
+      if (alreadyHasData) {
+        continue;
+      }
+
       // Calculate taxes for this NCM
       const taxes = await TaxCalculator.calculateAllTaxes(item.ncmCode);
-      
+
       // Create tribute records
       for (const tax of taxes) {
         await storage.createTribute({

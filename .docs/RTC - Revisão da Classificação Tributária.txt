@@ -1,0 +1,29 @@
+NOVO PROJETO THAYSSA -
+REVISÃO DA CLASSIFICAÇÃO TRIBUTÁRIA (RCT)
+
+FICAR VENDO OS SITES, PARA ATUALIZAR O BANCO DE DADOS DAS CLASSFICAÇÕES
+
+claude para ficar fazendo varredura no econet dos ncm - ele vai atuar de forma automatica, com um calendario
+alguem pode pedir para fazer a varredura novamente, porem isso sera solicitado, e vai chegar primeiro para a thayssa para ela aprovar ou rejeitar a varredura, pois isso custa tokens do claude. depois de aprovada por ela, vai para o yuri aprovar tambem, se aprovado, faz a varredura
+
+alerta para avisar que teve mudança no ncm
+
+manter o histórico da mudança do ncm (vigência da informação)
+
+mvp inicial
+dashboard
+upload de arquivos
+extração dos ncm para analise dos ncm - requer aprovação das mudanças
+os bots que fazem a varredura, que vão montar a base de dados do econet
+atualização dos ncm caso tenha alguma mudança
+
+para depois
+analisa tribuaria federal
+agente de chat
+
+econeteditora.com.br
+
+pesquisar - 
+ICMS - Imposto sobre Circulação de Mercadorias e Serviços. É um tributo estadual brasileiro que incide sobre a movimentação de mercadorias, serviços de transporte interestadual/intermunicipal e comunicação. As alíquotas variam por estado e produto, geralmente entre 7% e 30%
+CBS - Contribuição sobre Bens e Serviços. É um novo tributo federal brasileiro, integrante da Reforma Tributária, que substituirá o PIS e a COFINS a partir de 2026. Com uma alíquota geral proposta de 12%, visa unificar tributos, reduzir custos de conformidade (compliance) e simplificar o sistema usando a não cumulatividade plena.
+PIS (Programa de Integração Social) e COFINS (Contribuição para o Financiamento da Seguridade Social) - São tributos federais brasileiros que incidem sobre a receita bruta das empresas para financiar o seguro-desemprego, abono salarial, saúde, previdência e assistência social. As alíquotas e a forma de cálculo dependem do regime tributário (Lucro Real ou Presumido).

@@ -1,33 +1,40 @@
 import { sql } from 'drizzle-orm';
-import {
-  index,
-  jsonb,
-  pgTable,
-  timestamp,
-  varchar,
-  text,
-  real,
-  pgEnum,
-  uuid
-} from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Auto-detect database type based on environment
+const isDev = process.env.NODE_ENV === 'development';
+
+// Generic column definitions that work with both SQLite and PostgreSQL
+import {
+  timestamp,
+  varchar,
+  text,
+  real,
+} from "drizzle-orm/pg-core";
+
+// Conditional table imports - static to avoid require issues
+import { sqliteTable as sqliteTableFn } from "drizzle-orm/sqlite-core";
+import { pgTable as pgTableFn } from "drizzle-orm/pg-core";
+
+const tableFactory = isDev ? sqliteTableFn : pgTableFn;
+
 // Session storage table for Replit Auth
-export const sessions = pgTable(
+export const sessions = tableFactory(
   "sessions",
   {
     sid: varchar("sid").primaryKey(),
-    sess: jsonb("sess").notNull(),
+    // SESSION: Store as text in both SQLite and PostgreSQL
+    sess: text("sess").notNull(),
     expire: timestamp("expire").notNull(),
-  },
-  (table) => [index("IDX_session_expire").on(table.expire)],
+  }
 );
 
 // User storage table for Replit Auth
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+
+export const users = tableFactory("users", {
+  id: isDev ? varchar("id").primaryKey() : varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: varchar("email").unique(),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
@@ -37,34 +44,22 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// File types enum
-export const fileTypeEnum = pgEnum('file_type', ['SPED', 'XML', 'CSV']);
-
-// Upload status enum
-export const uploadStatusEnum = pgEnum('upload_status', ['PENDING', 'PROCESSING', 'COMPLETED', 'ERROR']);
-
-// Tribute types enum
-export const tributeTypeEnum = pgEnum('tribute_type', ['ICMS', 'IPI', 'PIS', 'COFINS']);
-
-// Jurisdiction enum
-export const jurisdictionEnum = pgEnum('jurisdiction', ['FEDERAL', 'ESTADUAL']);
-
 // Upload table
-export const uploads = pgTable("uploads", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+export const uploads = tableFactory("uploads", {
+  id: isDev ? varchar("id").primaryKey() : varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   filename: text("filename").notNull(),
-  fileType: fileTypeEnum("file_type").notNull(),
+  fileType: varchar("file_type").notNull(), // SPED, XML, CSV
   description: text("description"),
   uploadedAt: timestamp("uploaded_at").defaultNow(),
   userId: varchar("user_id").notNull().references(() => users.id),
-  status: uploadStatusEnum("status").default('PENDING'),
+  status: varchar("status").default('PENDING'), // PENDING, PROCESSING, COMPLETED, ERROR
   processedAt: timestamp("processed_at"),
   errorMessage: text("error_message"),
 });
 
 // NCM Items table
-export const ncmItems = pgTable("ncm_items", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+export const ncmItems = tableFactory("ncm_items", {
+  id: isDev ? varchar("id").primaryKey() : varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   ncmCode: varchar("ncm_code", { length: 8 }).notNull(),
   description: text("description"),
   productName: text("product_name"),
@@ -73,11 +68,11 @@ export const ncmItems = pgTable("ncm_items", {
 });
 
 // Tributes table
-export const tributes = pgTable("tributes", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  type: tributeTypeEnum("type").notNull(),
+export const tributes = tableFactory("tributes", {
+  id: isDev ? varchar("id").primaryKey() : varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: varchar("type").notNull(), // ICMS, IPI, PIS, COFINS
   rate: real("rate"),
-  jurisdiction: jurisdictionEnum("jurisdiction").notNull(),
+  jurisdiction: varchar("jurisdiction").notNull(), // FEDERAL, ESTADUAL
   lawSource: text("law_source"),
   effectiveFrom: timestamp("effective_from"),
   effectiveTo: timestamp("effective_to"),
@@ -87,10 +82,10 @@ export const tributes = pgTable("tributes", {
 });
 
 // Law change logs table
-export const lawChangeLogs = pgTable("law_change_logs", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tribute: tributeTypeEnum("tribute").notNull(),
-  jurisdiction: jurisdictionEnum("jurisdiction").notNull(),
+export const lawChangeLogs = tableFactory("law_change_logs", {
+  id: isDev ? varchar("id").primaryKey() : varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tribute: varchar("tribute").notNull(), // ICMS, IPI, PIS, COFINS
+  jurisdiction: varchar("jurisdiction").notNull(), // FEDERAL, ESTADUAL
   description: text("description").notNull(),
   detectedAt: timestamp("detected_at").defaultNow(),
   previousContent: text("previous_content"),

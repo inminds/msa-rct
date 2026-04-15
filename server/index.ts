@@ -54,14 +54,17 @@ app.use((req, res, next) => {
   }
 
   const port = parseInt(process.env.PORT || "5000", 10);
+  const isDev = process.env.NODE_ENV === 'development';
+  const host = isDev ? "127.0.0.1" : "0.0.0.0";
+  
   server.listen(
     {
       port,
-      host: "0.0.0.0",
-      reusePort: true,
+      host,
+      reusePort: !isDev,
     },
     () => {
-      log(`serving on port ${port}`);
+      log(`serving on http://${host}:${port}`);
     }
   );
 })();
