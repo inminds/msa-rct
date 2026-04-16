@@ -36,10 +36,25 @@ def get_pending_ncms() -> list[dict[str, str]]:
             data = response.json()
 
             if isinstance(data, list):
-                logger.info(f"API retornou {len(data)} NCMs pendentes")
-                return data
-            elif isinstance(data, dict) and "items" in data:
-                items = data["items"]
+                # Converte ncmCode -> code se necessário
+                items = []
+                for item in data:
+                    items.append({
+                        "code": item.get("ncmCode") or item.get("code", ""),
+                        "description": item.get("description", "") or ""
+                    })
+                logger.info(f"API retornou {len(items)} NCMs pendentes")
+                return items
+            elif isinstance(data, dict):
+                # Tenta vários nomes de campo conhecidos
+                raw_items = data.get("ncms") or data.get("items") or data.get("pending") or []
+                # Converte ncmCode -> code se necessário
+                items = []
+                for item in raw_items:
+                    items.append({
+                        "code": item.get("ncmCode") or item.get("code", ""),
+                        "description": item.get("description", "") or ""
+                    })
                 logger.info(f"API retornou {len(items)} NCMs pendentes")
                 return items
             else:

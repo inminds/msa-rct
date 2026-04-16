@@ -302,10 +302,18 @@ class EconetScraper:
         page.locator("text=Federal").first.click()
         logger.debug("Clicou em Federal")
 
-        # 2. Aguardar e clicar em PIS/COFINS no submenu
-        page.wait_for_selector("text=PIS/COFINS", state="visible", timeout=15_000)
-        page.locator("text=PIS/COFINS").first.click()
-        logger.debug("Clicou em PIS/COFINS")
+        # 2. Aguardar e clicar em PIS/COFINS (não "Exclusão ICMS - PIS/COFINS")
+        page.wait_for_selector("text=PIS / COFINS", state="visible", timeout=15_000)
+        # Procura especificamente por "PIS / COFINS" sem "Exclusão"
+        pis_cofins_links = page.locator('a:has-text("PIS / COFINS")')
+        # Filtra para pegar aquele que NÃO contém "Exclusão"
+        for i in range(pis_cofins_links.count()):
+            link = pis_cofins_links.nth(i)
+            text = link.inner_text()
+            if "PIS / COFINS" in text and "Exclusão" not in text:
+                link.click()
+                logger.debug("Clicou em PIS/COFINS (correto)")
+                break
 
         # 3. Aguardar e clicar na aba "Busca do Produto"
         page.wait_for_selector("text=Busca do Produto", state="visible", timeout=15_000)
