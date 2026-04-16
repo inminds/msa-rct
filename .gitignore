@@ -1,0 +1,6 @@
+session.json
+_tmp_read.xlsx
+bcoDados_resultado.xlsx
+__pycache__/
+*.pyc
+.env
