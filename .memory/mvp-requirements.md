@@ -49,18 +49,83 @@ O sistema já possuía a estrutura base funcional (Multer, parsers de arquivo, s
 
 ---
 
-### ⏳ 2. Varredura e Construção da Base de Dados (RPA/Bot)
-**Status:** Pendente
+### ✅ 2. Varredura e Construção da Base de Dados (RPA/Bot)
+**Status:** Concluído
 
 **Descrição do requisito:**
 Claude acessa o Econet de forma automatizada, buscando tributação por NCM (PIS, Cofins, alíquotas, condições especiais — excluindo importação, exportação e CST). A varredura roda em calendário automático. Se alguém quiser disparar uma varredura manual/completa, o fluxo de aprovação entra em ação.
 
-**Contexto técnico (ver CLAUDE.md para detalhamento completo):**
-- Ferramenta escolhida: **Playwright** (Python)
-- Fluxo de navegação: login na home → Federal → PIS/COFINS → Busca do Produto → digitar NCM → selecionar resultado → extrair aba Regra Geral
-- reCAPTCHA apenas no login; estratégia: persistência de sessão via cookies
-- NCM não encontrado: site exibe "Nenhum Registro Encontrado"
-- Fallback se NCM exato não encontrado: tentar NCM mais próximo ou busca por palavra-chave
+**O que foi implementado:**
+
+**Camada Node.js (backend)**
+
+- **`shared/schema.ts`** — 3 novos campos na tabela `ncm_items`:
+  - `econet_status` (VARCHAR, default `'PENDING'`): status da varredura Econet por NCM
+  - `econet_scanned_at` (TIMESTAMP): quando foi feito o último scan
+  - `econet_matched_ncm` (VARCHAR): código que o Econet efetivamente retornou (pode diferir se match parcial)
+
+- **`server/setup-db.ts`** — migração SQLite segura:
+  - Tabela `ncm_items` atualizada com os 3 novos campos no `CREATE TABLE IF NOT EXISTS`
+  - Migração incremental via `sqlite.pragma('table_info(ncm_items)')` para adicionar colunas em DBs existentes sem `DROP TABLE`
+
+- **`server/storage.ts`** — 3 novos métodos:
+  - `getPendingNCMs()`: retorna NCMs distintos com `econet_status = 'PENDING'` que ainda não possuem dados de tributos (`hasExistingTributeData = false`)
+  - `updateNCMEconetStatus(ncmCode, status, matchedNcm?)`: atualiza todos os `ncm_items` com aquele código NCM
+  - `saveNCMTributeData(ncmCode, status, regras, matchedNcm?)`: persiste PIS e COFINS como 2 registros `tributes` por regime por NCM item
+
+- **`server/routes.ts`** — 3 novos endpoints:
+  - `GET /api/ncm-scan/pending` — lista NCMs pendentes (autenticação normal ou `x-internal-key`)
+  - `POST /api/ncm-scan/save` — recebe dados do scraper Python e persiste (apenas `x-internal-key`)
+  - `POST /api/ncm-scan/trigger` — dispara o processo Python como filho desacoplado (`detached: true`)
+  - Constante `INTERNAL_API_KEY` (env `NODE_API_KEY`, default `"dev-internal-key"`)
+  - Helper `isInternalRequest()` verifica header `x-internal-key`
+
+**Camada Python (rpa_ncm_scanner/)**
+
+- **`config.py`** — configurações via env vars: `ECONET_URL`, `NODE_API_URL`, `NODE_API_KEY`, `ANTHROPIC_API_KEY`, `HEADLESS`, `REQUEST_DELAY`
+- **`session_manager.py`** — persistência de cookies em JSON; `load_cookies()`, `save_cookies()`, `is_session_valid()`
+- **`scraper.py`** — `EconetScraper` (Playwright sync):
+  - `login()`: reutiliza sessão; faz login completo com browser visível apenas quando necessário (reCAPTCHA)
+  - `_navigate_to_pis_cofins_search()`: Federal → PIS/COFINS → Busca do Produto
+  - `_fill_ncm_search_form()`: radio "NCM" + campo + Pesquisar
+  - `_select_ncm_from_results()`: match exato → match parcial (≥4 dígitos) → NOT_FOUND; captura HTML da aba Regra Geral
+  - `search_ncm(ncm_code)`: API pública retorna `{status, ncm_found, matched_ncm, html_content}`
+- **`interpreter.py`** — `extract_tribute_data(html_content, ncm_code)`:
+  - Modelo: `claude-opus-4-5`
+  - Extrai PIS/COFINS por regime tributário (Simples Nacional, Cumulativo, Não Cumulativo)
+  - HTML truncado a 80.000 chars para economizar tokens
+  - Retorna `{ncm, descricao, regras: [{regime, pis, cofins, dispositivo_legal}]}`
+- **`api_client.py`** — cliente HTTP (httpx): `get_pending_ncms()`, `save_tribute_data()`
+- **`main.py`** — CLI completo:
+  - `login` → abre browser visível para reCAPTCHA manual, salva sessão
+  - `scan [--ncm X]` → busca pendentes na API (ou NCM único), loop com `REQUEST_DELAY`, save na API
+  - `ScanSummary` — relatório de found/partial/not_found/error ao final
+
+**Uso:**
+```bash
+# 1. Fazer login e resolver reCAPTCHA (apenas na primeira vez ou quando sessão expirar)
+python -m rpa_ncm_scanner login -u SEU_USUARIO -p SUA_SENHA
+
+# 2. Escanear todos os NCMs pendentes
+python -m rpa_ncm_scanner scan -u SEU_USUARIO -p SUA_SENHA
+
+# 3. Escanear NCM específico
+python -m rpa_ncm_scanner scan --ncm 85171200 -u SEU_USUARIO -p SUA_SENHA
+```
+
+**Variáveis de ambiente necessárias:**
+```
+ANTHROPIC_API_KEY    # Chave da API Anthropic para o interpreter
+NODE_API_URL         # URL da API Node (default: http://127.0.0.1:5000)
+NODE_API_KEY         # Chave interna (default: dev-internal-key)
+HEADLESS             # "true" para rodar sem UI (default: false)
+```
+
+**Pré-requisitos após instalação:**
+```bash
+pip install playwright
+playwright install chromium
+```
 
 ---
 

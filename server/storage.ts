@@ -68,6 +68,16 @@ export interface IStorage {
 
   // Incremental ingestion check
   hasExistingTributeData(ncmCode: string): Promise<boolean>;
+
+  // NCM Scan operations
+  getPendingNCMs(): Promise<{ ncmCode: string; description: string | null }[]>;
+  updateNCMEconetStatus(ncmCode: string, status: string, matchedNcm?: string): Promise<void>;
+  saveNCMTributeData(
+    ncmCode: string,
+    status: string,
+    regras: { regime: string; pis: number; cofins: number; dispositivoLegal: string }[],
+    matchedNcm?: string,
+  ): Promise<{ saved: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -310,6 +320,74 @@ export class DatabaseStorage implements IStorage {
     await db.delete(ncmItems);
     await db.delete(uploads);
     console.log('🗑️  All data cleared from database');
+  }
+
+  async getPendingNCMs(): Promise<{ ncmCode: string; description: string | null }[]> {
+    const rows = await db
+      .selectDistinct({ ncmCode: ncmItems.ncmCode, description: ncmItems.description })
+      .from(ncmItems)
+      .where(eq((ncmItems as any).econetStatus, 'PENDING'));
+
+    // Filter out codes that already have tributes (incremental guarantee)
+    const result: { ncmCode: string; description: string | null }[] = [];
+    for (const row of rows) {
+      const hasData = await this.hasExistingTributeData(row.ncmCode);
+      if (!hasData) result.push(row);
+    }
+    return result;
+  }
+
+  async updateNCMEconetStatus(ncmCode: string, status: string, matchedNcm?: string): Promise<void> {
+    await db
+      .update(ncmItems)
+      .set({
+        econetStatus: status,
+        econetScannedAt: new Date(),
+        ...(matchedNcm ? { econetMatchedNcm: matchedNcm } : {}),
+      } as any)
+      .where(eq(ncmItems.ncmCode, ncmCode));
+  }
+
+  async saveNCMTributeData(
+    ncmCode: string,
+    status: string,
+    regras: { regime: string; pis: number; cofins: number; dispositivoLegal: string }[],
+    matchedNcm?: string,
+  ): Promise<{ saved: number }> {
+    await this.updateNCMEconetStatus(ncmCode, status, matchedNcm);
+
+    if (regras.length === 0) return { saved: 0 };
+
+    const items = await db
+      .select({ id: ncmItems.id })
+      .from(ncmItems)
+      .where(eq(ncmItems.ncmCode, ncmCode));
+
+    let saved = 0;
+    for (const item of items) {
+      for (const regra of regras) {
+        await db.insert(tributes).values({
+          id: randomUUID(),
+          type: 'PIS',
+          rate: regra.pis,
+          jurisdiction: 'FEDERAL',
+          lawSource: `[${regra.regime}] ${regra.dispositivoLegal}`,
+          effectiveFrom: new Date(),
+          ncmItemId: item.id,
+        });
+        await db.insert(tributes).values({
+          id: randomUUID(),
+          type: 'COFINS',
+          rate: regra.cofins,
+          jurisdiction: 'FEDERAL',
+          lawSource: `[${regra.regime}] ${regra.dispositivoLegal}`,
+          effectiveFrom: new Date(),
+          ncmItemId: item.id,
+        });
+        saved++;
+      }
+    }
+    return { saved };
   }
 }
 

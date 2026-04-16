@@ -1,0 +1,142 @@
+[
+  {
+    "name": "_GRECAPTCHA",
+    "value": "09AKhCRwhwp9utykn8lhbNK9-ZkXj5PQfRK7n6tgm75Grqfd9XU52KVOowSkiPk-6jqtuC6YSgCsqt3l5pVFR13eg",
+    "domain": "www.google.com",
+    "path": "/recaptcha",
+    "expires": 1791898890.205598,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "bG0naW4",
+    "value": "398e4bdc001c9525c7ccc6f50717e70f",
+    "domain": ".econeteditora.com.br",
+    "path": "/",
+    "expires": 1776394800.388019,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "PHPSESSID",
+    "value": "g1nfcm5r1r2i6i27vfajgmu5b6",
+    "domain": "www.econeteditora.com.br",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "cookiesession1",
+    "value": "678A8C329515B5B994DB4033F6E5E683",
+    "domain": "www.econeteditora.com.br",
+    "path": "/",
+    "expires": 1807882847.388198,
+    "httpOnly": true,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_ga",
+    "value": "GA1.1.381644249.1776346849",
+    "domain": ".econeteditora.com.br",
+    "path": "/",
+    "expires": 1810906848.971826,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_hjSessionUser_3916732",
+    "value": "eyJpZCI6IjYzNTZlZDlhLTI5NDYtNWVmMC1hMWI3LWZiZDAwZWQwNjA2MCIsImNyZWF0ZWQiOjE3NzYzNDY4NTUxNzcsImV4aXN0aW5nIjpmYWxzZX0=",
+    "domain": ".econeteditora.com.br",
+    "path": "/",
+    "expires": 1807882855,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "_hjSession_3916732",
+    "value": "eyJpZCI6ImIxM2E2NDQ2LTA2YjgtNDkyMS05ZjkyLTk5YTE1YzI2YjQ2NiIsImMiOjE3NzYzNDY4NTUxNzcsInMiOjAsInIiOjAsInNiIjowLCJzciI6MCwic2UiOjAsImZzIjoxLCJzcCI6MH0=",
+    "domain": ".econeteditora.com.br",
+    "path": "/",
+    "expires": 1776348693,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "__Secure-YNID",
+    "value": "17.YT=Yh0TZEyZPSB0XytPIyMfiu35X7tFRP18S60LcpB0UY66WkZ1UubepOqY0bSXD7rI6S-fYK2ZSc0vTPMU10l9NLid7Gi8dLgcJ8PrTH77Dh_TIYI8vERdS1vowf12OJjqmSCpenn_uiCd4cwl8GJvjILkVwFKvPcY1BYehoS4h2Kew8UfaxTZoYxTFlMViGqC-58IazEPlFjqsIqNh3I8k3-IFFIAl7zu98AF3I6sifMC-z4YCng07Ra5HehYzyzPFS6sYKJyncmZqQxQoFzumXWYiK_pqFFEOjJF5bRWdBfBjDDAjV55nSuu8zMTQirgMseppFqOomzwgnISWDf6Ow",
+    "domain": ".youtube.com",
+    "path": "/",
+    "expires": 1791898859.106813,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None",
+    "partitionKey": "https://econeteditora.com.br",
+    "_crHasCrossSiteAncestor": true
+  },
+  {
+    "name": "YSC",
+    "value": "laEC2Qikg_o",
+    "domain": ".youtube.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None",
+    "partitionKey": "https://econeteditora.com.br",
+    "_crHasCrossSiteAncestor": true
+  },
+  {
+    "name": "__Secure-ROLLOUT_TOKEN",
+    "value": "CNC3xcrOkvosEPKFhNy_8pMDGPKFhNy_8pMD",
+    "domain": ".youtube.com",
+    "path": "/",
+    "expires": 1791898859.106876,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None",
+    "partitionKey": "https://econeteditora.com.br",
+    "_crHasCrossSiteAncestor": true
+  },
+  {
+    "name": "VISITOR_INFO1_LIVE",
+    "value": "pimhxjWPBwA",
+    "domain": ".youtube.com",
+    "path": "/",
+    "expires": 1791898859.106902,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None",
+    "partitionKey": "https://econeteditora.com.br",
+    "_crHasCrossSiteAncestor": true
+  },
+  {
+    "name": "VISITOR_PRIVACY_METADATA",
+    "value": "CgJCUhIEGgAgSA%3D%3D",
+    "domain": ".youtube.com",
+    "path": "/",
+    "expires": 1791898859.106923,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None",
+    "partitionKey": "https://econeteditora.com.br",
+    "_crHasCrossSiteAncestor": true
+  },
+  {
+    "name": "_ga_5TXVL9JD46",
+    "value": "GS2.1.s1776346848$o1$g1$t1776346865$j43$l0$h503483632",
+    "domain": ".econeteditora.com.br",
+    "path": "/",
+    "expires": 1810906865.319288,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  }
+]

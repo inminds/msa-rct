@@ -6,6 +6,14 @@ import { FileProcessor } from "./services/fileProcessor";
 import { TaxCalculator } from "./services/taxCalculator";
 import multer from "multer";
 import { insertUploadSchema, insertNCMItemSchema, insertTributeSchema } from "@shared/schema";
+import { spawn } from "child_process";
+import path from "path";
+
+const INTERNAL_API_KEY = process.env.NODE_API_KEY ?? "dev-internal-key";
+
+function isInternalRequest(req: any): boolean {
+  return req.headers["x-internal-key"] === INTERNAL_API_KEY;
+}
 
 // Demo data generation function
 async function generateDemoData(userId: string): Promise<void> {
@@ -669,6 +677,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
+  // ─── NCM Scan endpoints (consumed by Python rpa_ncm_scanner) ─────────────
+
+  // GET /api/ncm-scan/pending — returns unique NCMs awaiting Econet scan
+  app.get("/api/ncm-scan/pending", async (req, res) => {
+    if (!isInternalRequest(req) && !req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    try {
+      const pending = await storage.getPendingNCMs();
+      res.json({ ncms: pending, total: pending.length });
+    } catch (error) {
+      console.error("Error fetching pending NCMs:", error);
+      res.status(500).json({ message: "Failed to fetch pending NCMs" });
+    }
+  });
+
+  // POST /api/ncm-scan/save — receives scraped tribute data from Python scraper
+  app.post("/api/ncm-scan/save", async (req, res) => {
+    if (!isInternalRequest(req)) {
+      return res.status(401).json({ message: "Unauthorized — internal endpoint" });
+    }
+    try {
+      const { ncmCode, status, regras, matchedNcm } = req.body as {
+        ncmCode: string;
+        status: "FOUND" | "NOT_FOUND" | "PARTIAL";
+        regras: { regime: string; pis: number; cofins: number; dispositivoLegal: string }[];
+        matchedNcm?: string;
+      };
+
+      if (!ncmCode || !status) {
+        return res.status(400).json({ message: "ncmCode and status are required" });
+      }
+
+      const result = await storage.saveNCMTributeData(
+        ncmCode,
+        status,
+        regras ?? [],
+        matchedNcm,
+      );
+
+      console.log(`[ncm-scan] ${ncmCode} → ${status} | ${result.saved} tribute records saved`);
+      res.json({ success: true, ncmCode, status, saved: result.saved });
+    } catch (error) {
+      console.error("Error saving NCM tribute data:", error);
+      res.status(500).json({ message: "Failed to save tribute data" });
+    }
+  });
+
+  // POST /api/ncm-scan/trigger — triggers the Python scraper process
+  app.post("/api/ncm-scan/trigger", isAuthenticated, async (req: any, res) => {
+    try {
+      const { ncm } = req.body as { ncm?: string };
+      const isDev = process.env.NODE_ENV === "development";
+      const scriptDir = path.resolve("rpa_ncm_scanner");
+
+      const args = ncm
+        ? ["-m", "rpa_ncm_scanner", "scan", "--ncm", ncm]
+        : ["-m", "rpa_ncm_scanner", "scan"];
+
+      const pythonBin = isDev ? "python" : "python3";
+      const child = spawn(pythonBin, args, {
+        cwd: path.resolve("."),
+        env: {
+          ...process.env,
+          NODE_API_URL: `http://127.0.0.1:${process.env.PORT ?? 5000}`,
+          NODE_API_KEY: INTERNAL_API_KEY,
+          PYTHONUNBUFFERED: "1",
+        },
+        detached: true,
+        stdio: "ignore",
+      });
+
+      child.unref(); // Let the process run independently
+
+      console.log(`[ncm-scan] Python scraper triggered (pid: ${child.pid}) — ncm: ${ncm ?? "all pending"}`);
+      res.json({
+        success: true,
+        message: ncm ? `Scan started for NCM ${ncm}` : "Scan started for all pending NCMs",
+        pid: child.pid,
+      });
+    } catch (error) {
+      console.error("Error triggering scan:", error);
+      res.status(500).json({ message: "Failed to trigger NCM scan" });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   const httpServer = createServer(app);
   return httpServer;

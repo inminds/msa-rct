@@ -65,6 +65,9 @@ async function setupDatabase() {
         product_name TEXT,
         upload_id VARCHAR NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        econet_status VARCHAR DEFAULT 'PENDING',
+        econet_scanned_at TIMESTAMP,
+        econet_matched_ncm VARCHAR,
         FOREIGN KEY (upload_id) REFERENCES uploads(id)
       )`,
 
@@ -98,11 +101,27 @@ async function setupDatabase() {
 
             // Create index for sessions
             `CREATE INDEX IF NOT EXISTS IDX_session_expire ON sessions(expire)`,
+
         ];
 
         // Execute all statements
         for (const stmt of statements) {
             sqlite.exec(stmt);
+        }
+
+        // Safe column migrations for SQLite (ADD COLUMN IF NOT EXISTS not supported)
+        const migrations = [
+            { col: 'econet_status',      ddl: `ALTER TABLE ncm_items ADD COLUMN econet_status VARCHAR DEFAULT 'PENDING'` },
+            { col: 'econet_scanned_at',  ddl: `ALTER TABLE ncm_items ADD COLUMN econet_scanned_at TIMESTAMP` },
+            { col: 'econet_matched_ncm', ddl: `ALTER TABLE ncm_items ADD COLUMN econet_matched_ncm VARCHAR` },
+        ];
+        const existingCols = sqlite.pragma('table_info(ncm_items)') as { name: string }[];
+        const colNames = existingCols.map((c) => c.name);
+        for (const m of migrations) {
+            if (!colNames.includes(m.col)) {
+                sqlite.exec(m.ddl);
+                console.log(`✅ Added column: ncm_items.${m.col}`);
+            }
         }
 
         console.log('✅ Database schema created successfully!');

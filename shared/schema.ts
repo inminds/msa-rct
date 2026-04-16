@@ -65,6 +65,10 @@ export const ncmItems = tableFactory("ncm_items", {
   productName: text("product_name"),
   uploadId: varchar("upload_id").notNull().references(() => uploads.id),
   createdAt: timestamp("created_at"),
+  // Econet scan tracking
+  econetStatus: varchar("econet_status").default('PENDING'), // PENDING | FOUND | NOT_FOUND | PARTIAL
+  econetScannedAt: timestamp("econet_scanned_at"),
+  econetMatchedNcm: varchar("econet_matched_ncm"), // NCM efetivamente encontrado (pode diferir em match parcial)
 });
 
 // Tributes table
