@@ -44,22 +44,30 @@ def load_cookies(context: BrowserContext) -> bool:
 
 def is_session_valid(page: Page) -> bool:
     """
-    Verifica se a sessão ainda está ativa navegando para o Econet e
-    checando se há elemento que só aparece quando o usuário está logado.
+    Verifica se a sessão ainda está ativa navegando para o Econet.
 
-    O Econet exibe um menu ou área de usuário após login bem-sucedido.
-    Quando não logado, exibe o formulário de login na home.
+    ATENÇÃO: O Econet mostra o menu lateral (Federal, Trabalhista, etc.) mesmo
+    para usuários NÃO logados. O indicador real de sessão autenticada é a
+    AUSÊNCIA do botão "Entrar" no header (que some após login) ou a presença
+    de elementos exclusivos da área logada.
+
+    Estratégia: se o botão "Entrar" estiver visível no header → NÃO está logado.
     """
     try:
         page.goto(ECONET_URL, wait_until="domcontentloaded", timeout=30_000)
+        import time
+        time.sleep(2)
 
-        # Após login, o menu lateral com "Federal", "Estadual" etc. fica visível.
-        # Tenta localizar o link/botão "Federal" que só existe na área logada.
-        # Ajuste o seletor conforme o HTML real do Econet.
-        federal_link = page.locator("text=Federal").first
-        federal_link.wait_for(state="visible", timeout=8_000)
-        logger.info("Sessão válida — usuário já está logado")
-        return True
-    except Exception:
-        logger.info("Sessão inválida ou expirada — login necessário")
+        # Procura o link "Entrar" no header (visível quando NÃO logado)
+        entrar_btn = page.get_by_role("link", name="Entrar")
+        is_visible = entrar_btn.is_visible()
+
+        if is_visible:
+            logger.info("Sessão inválida — botão 'Entrar' ainda visível (não autenticado)")
+            return False
+        else:
+            logger.info("Sessão válida — botão 'Entrar' ausente (autenticado)")
+            return True
+    except Exception as e:
+        logger.info(f"Não foi possível verificar sessão: {e} — assumindo login necessário")
         return False

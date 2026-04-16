@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from .api_client import get_pending_ncms, save_tribute_data
-from .config import HEADLESS, REQUEST_DELAY
+from .config import HEADLESS, REQUEST_DELAY, ECONET_USERNAME, ECONET_PASSWORD
 from .interpreter import extract_tribute_data
 from .scraper import EconetScraper, NCM_STATUS_FOUND, NCM_STATUS_NOT_FOUND, NCM_STATUS_PARTIAL
 
@@ -76,9 +76,14 @@ class ScanSummary:
 def cmd_login(args: argparse.Namespace) -> None:
     """Faz login no Econet e salva a sessão em cookies."""
     logger.info("Iniciando comando: login")
-    scraper = EconetScraper(headless=False)  # login sempre com UI visível
+    username = args.username or ECONET_USERNAME
+    password = args.password or ECONET_PASSWORD
+    if not username or not password:
+        logger.error("Credenciais necessárias. Use --username/--password ou env vars ECONET_USERNAME/ECONET_PASSWORD.")
+        sys.exit(1)
+    scraper = EconetScraper(headless=False)  # login sempre com UI visível para reCAPTCHA
     try:
-        scraper.login(username=args.username, password=args.password)
+        scraper.login(username=username, password=password)
         logger.info("Login concluído. Sessão salva para reutilização futura.")
     finally:
         scraper.close()
@@ -104,10 +109,14 @@ def cmd_scan(args: argparse.Namespace) -> None:
             return
         logger.info(f"{len(ncm_list)} NCMs pendentes para varredura")
 
-    if not args.username or not args.password:
+    # Usa credenciais do argumento ou cai para as do config.py (env vars / defaults)
+    username = args.username or ECONET_USERNAME
+    password = args.password or ECONET_PASSWORD
+
+    if not username or not password:
         logger.error(
-            "Credenciais necessárias para scan. Use --username e --password, "
-            "ou execute 'login' primeiro para salvar a sessão."
+            "Credenciais necessárias. Use --username/--password ou defina "
+            "ECONET_USERNAME/ECONET_PASSWORD nas variáveis de ambiente."
         )
         sys.exit(1)
 
@@ -116,7 +125,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
 
     try:
         # Login (reutiliza sessão se válida)
-        scraper.login(username=args.username, password=args.password)
+        scraper.login(username=username, password=password)
 
         for i, ncm_item in enumerate(ncm_list, start=1):
             ncm_code = ncm_item.get("code", "")
@@ -212,8 +221,14 @@ def build_parser() -> argparse.ArgumentParser:
         "login",
         help="Faz login no Econet e salva sessão para reutilização",
     )
-    login_parser.add_argument("--username", "-u", required=True, help="Usuário Econet")
-    login_parser.add_argument("--password", "-p", required=True, help="Senha Econet")
+    login_parser.add_argument(
+        "--username", "-u", default="",
+        help=f"Usuário Econet (default: env ECONET_USERNAME = '{ECONET_USERNAME}')",
+    )
+    login_parser.add_argument(
+        "--password", "-p", default="",
+        help="Senha Econet (default: env ECONET_PASSWORD)",
+    )
 
     # --- Subcomando: scan ---
     scan_parser = subparsers.add_parser(

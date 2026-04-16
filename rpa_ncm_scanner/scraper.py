@@ -51,6 +51,10 @@ class EconetScraper:
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
 
+        # Credenciais guardadas após login para uso no login inline durante navegação
+        self._username: str = ""
+        self._password: str = ""
+
     # ------------------------------------------------------------------
     # Ciclo de vida do browser
     # ------------------------------------------------------------------
@@ -96,15 +100,21 @@ class EconetScraper:
     # Screenshots de erro
     # ------------------------------------------------------------------
 
-    def _screenshot_on_error(self, label: str) -> None:
-        """Salva um screenshot para debug quando ocorre um erro."""
+    def _screenshot_on_error(self, label: str, *, warn: bool = True) -> None:
+        """
+        Salva um screenshot para debug.
+        Usado tanto em erros quanto em pontos de navegação para inspecionar o DOM.
+        """
         if not self._page:
             return
         try:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            path = SCREENSHOTS_DIR / f"error_{label}_{ts}.png"
+            path = SCREENSHOTS_DIR / f"{label}_{ts}.png"
             self._page.screenshot(path=str(path))
-            logger.warning(f"Screenshot salvo: {path}")
+            if warn:
+                logger.warning(f"Screenshot salvo: {path}")
+            else:
+                logger.debug(f"Screenshot salvo: {path}")
         except Exception as e:
             logger.debug(f"Não foi possível salvar screenshot: {e}")
 
@@ -125,6 +135,10 @@ class EconetScraper:
         if not self._browser:
             self._start_browser()
 
+        # Guarda credenciais para uso no login inline durante navegação
+        self._username = username
+        self._password = password
+
         # Tenta reutilizar sessão existente
         session_loaded = load_cookies(self._context)
         if session_loaded and is_session_valid(self._page):
@@ -132,201 +146,380 @@ class EconetScraper:
             return
 
         logger.info("Iniciando fluxo de login no Econet...")
+        self._username = username
+        self._password = password
         self._do_login(username, password)
         save_cookies(self._context)
         logger.info("Login concluído e sessão salva")
 
+    def _fill_credentials_and_submit(self, username: str, password: str, submit_text: str) -> None:
+        """
+        Preenche as credenciais num formulário de login já visível na página
+        e clica no botão de submit indicado.
+
+        Usado tanto no modal "Assinatura Econet" quanto no formulário inline
+        que aparece quando o usuário acessa conteúdo protegido sem estar logado.
+
+        Args:
+            username: Nome de usuário Econet
+            password: Senha Econet
+            submit_text: Texto do botão de submit (ex: "Entrar" ou "FAZER LOGIN")
+        """
+        import time
+        page = self._page
+
+        # Campo de usuário — placeholder confirmado via screenshot: "nome_usuario"
+        # Fallback genérico: primeiro input de texto visível
+        user_sel = (
+            "input[placeholder='nome_usuario'], "
+            "input[placeholder*='nome_'], "
+            "input[name='usuario'], "
+            "input[name='login'], "
+            "input[name='user']"
+        )
+        try:
+            user_input = page.locator(user_sel).first
+            user_input.wait_for(state="visible", timeout=8_000)
+            user_input.fill(username)
+            logger.info(f"Campo usuário preenchido: {username}")
+        except Exception:
+            # Último fallback: primeiro input text visível na página
+            user_input = page.locator(
+                "input[type='text']:visible, input:not([type]):visible"
+            ).first
+            user_input.fill(username)
+            logger.info(f"Campo usuário preenchido (fallback genérico): {username}")
+
+        # Campo senha
+        page.locator("input[type='password']").first.fill(password)
+        logger.info("Campo senha preenchido")
+
+        # Tenta clicar no reCAPTCHA automaticamente
+        self._try_click_recaptcha()
+
+        # Clica no botão de submit
+        for sel in [
+            f"button:has-text('{submit_text}')",
+            f"input[type='submit'][value*='{submit_text}']",
+            "button[type='submit']",
+            "input[type='submit']",
+        ]:
+            try:
+                btn = page.locator(sel).first
+                btn.wait_for(state="visible", timeout=4_000)
+                btn.click()
+                logger.info(f"Clicou em '{submit_text}' via '{sel}'")
+                return
+            except Exception:
+                continue
+
+        raise RuntimeError(f"Botão de submit '{submit_text}' não encontrado")
+
     def _do_login(self, username: str, password: str) -> None:
         """
-        Executa o login real no Econet.
+        Executa o login via modal "Assinatura Econet".
 
-        O login está num modal que abre ao clicar no botão "Entrar" no topo direito.
-        Após preencher credenciais, o reCAPTCHA pode exigir interação humana.
+        Fluxo confirmado via screenshot:
+        1. Página carrega com menu lateral visível e botão "Entrar" no topo direito
+        2. Clicar em "Entrar" abre o modal "Assinatura Econet"
+        3. Modal tem: campo "Login" (input text), campo "Senha", reCAPTCHA, botão "Entrar"
+        4. Após login o modal fecha e o botão "Entrar" some do header
         """
+        import time
+
         page = self._page
         page.goto(ECONET_URL, wait_until="domcontentloaded", timeout=30_000)
         logger.info(f"Acessou {ECONET_URL}")
-        
-        # Aguarda página carregar (permite JS executar)
-        import time
-        time.sleep(3)  # Pequeno delay para JS inicializar
-        
-        # Clica no botão "Entrar" no topo direito para abrir modal de login
-        logger.info("Procurando botão 'Entrar' no topo direito...")
-        entrar_selectors = [
-            "a:has-text('Entrar')",
-            "button:has-text('Entrar')",
-            "a[href='#']:has-text('Entrar')",
-            ".btn-entrar",
-            "[class*='Entrar']",
-        ]
-        
-        modal_opened = False
-        for selector in entrar_selectors:
-            try:
-                button = page.locator(selector)
-                # Procura especificamente no topo direito (coordenadas estimadas)
-                count = button.count()
-                if count > 0:
-                    # Tenta o último "Entrar" que é provavelmente o do topo direito
-                    button.last.wait_for(state="visible", timeout=5_000)
-                    logger.info(f"Botão 'Entrar' encontrado, clicando...")
-                    button.last.click()
-                    modal_opened = True
+        time.sleep(2)
+
+        # Clicar em "Entrar" no topo direito para abrir o modal
+        logger.info("Clicando em 'Entrar' no header para abrir modal...")
+        try:
+            # Tenta pelo link exato no header
+            entrar = page.locator("a:has-text('Entrar')").last
+            entrar.wait_for(state="visible", timeout=8_000)
+            entrar.click()
+        except Exception:
+            # Fallback: qualquer elemento com texto "Entrar" visível
+            page.locator("*:has-text('Entrar'):visible").last.click()
+
+        # Aguarda o modal "Assinatura Econet" abrir
+        time.sleep(1)
+        try:
+            page.wait_for_selector("text=Assinatura Econet", state="visible", timeout=8_000)
+            logger.info("Modal 'Assinatura Econet' aberto")
+        except Exception:
+            self._screenshot_on_error("login_modal_not_opened")
+            logger.warning("Título do modal não detectado — tentando preencher assim mesmo")
+
+        # Preenche credenciais DENTRO do modal.
+        # O modal tem label "Login" e o campo é o primeiro input text do modal.
+        # Scopamos no container do modal para não pegar a barra de pesquisa do site.
+        logger.info(f"Preenchendo campo Login com '{username}'...")
+        try:
+            # Tenta localizar o input dentro do container do modal pelo título
+            modal = page.locator("div:has(> :text('Assinatura Econet')), "
+                                 "div:has(h2:text('Assinatura Econet')), "
+                                 "div:has(h3:text('Assinatura Econet'))").first
+            login_field = modal.locator("input[type='text'], input:not([type='password']):not([type='hidden'])").first
+            login_field.wait_for(state="visible", timeout=5_000)
+            login_field.fill(username)
+            logger.info(f"Campo Login preenchido no modal: {username}")
+        except Exception:
+            # Fallback: usa o segundo input text da página (o primeiro é a barra de busca do site)
+            logger.warning("Não achou input no modal via container — usando fallback posicional")
+            inputs = page.locator("input[type='text']:visible").all()
+            filled = False
+            for inp in inputs:
+                try:
+                    # Ignora a barra de busca do site (placeholder "Pesquisar...")
+                    ph = inp.get_attribute("placeholder") or ""
+                    if "Pesquisar" in ph or "pesquisar" in ph:
+                        continue
+                    inp.fill(username)
+                    filled = True
+                    logger.info(f"Campo Login preenchido (fallback): {username}")
                     break
-            except Exception as e:
-                logger.debug(f"Seletor {selector} falhou: {e}")
-                continue
-        
-        if not modal_opened:
-            logger.error("Botão 'Entrar' não encontrado!")
-            self._screenshot_on_error("login_button_not_found")
-            raise RuntimeError("Botão 'Entrar' não encontrado no topo da página")
-        
-        logger.info("Modal de login deve estar aberto. Aguardando campos...")
-        time.sleep(2)  # Aguarda modal aparecer e animar
-        
-        # Aguarda campos de login ficarem visíveis
-        logger.info("Aguardando campos de login ficarem visíveis...")
-        try:
-            page.locator("input[placeholder*='Código'], input[placeholder*='CPF']").first.wait_for(state="visible", timeout=15_000)
-            page.locator("input[placeholder*='Senha'], input[type='password']").first.wait_for(state="visible", timeout=15_000)
-        except Exception as e:
-            logger.error(f"Erro aguardando campos: {e}")
-            self._screenshot_on_error("login_modal_fields_not_visible")
-            raise
+                except Exception:
+                    continue
+            if not filled:
+                raise RuntimeError("Não foi possível preencher o campo Login no modal")
 
-        # Preenche Código/CPF
-        logger.info("Preenchendo código/CPF...")
-        page.locator("input[placeholder*='Código'], input[placeholder*='CPF']").first.fill(username)
+        page.locator("input[type='password']").first.fill(password)
+        logger.info("Campo Senha preenchido")
 
-        # Preenche senha
-        logger.info("Preenchendo senha...")
-        page.locator("input[placeholder*='Senha'], input[type='password']").first.fill(password)
+        self._try_click_recaptcha()
 
-        logger.info(
-            "Credenciais preenchidas. Se o reCAPTCHA aparecer, resolva-o manualmente no browser..."
-        )
-        
-        # Tira screenshot antes de enviar
-        self._screenshot_on_error("login_before_submit")
-        
-        # Tenta resolver reCAPTCHA (pode exigir interação manual)
-        logger.info("Procurando reCAPTCHA...")
-        try:
-            # Tenta clicar no checkbox "Não sou um robô"
-            recaptcha_checkbox = page.locator("div[role='img'][aria-label*='recaptcha'], iframe[src*='recaptcha']").first
-            if recaptcha_checkbox.count() > 0:
-                logger.info("reCAPTCHA detectado. Tentando interação automática...")
-                # Clica no checkbox reCAPTCHA
-                page.locator("div[role='presentation'] iframe").first.evaluate("el => el.click()")
-            
-            # Aguarda até 120 segundos para o usuário resolver o reCAPTCHA manualmente
-            logger.info("Aguardando resolução do reCAPTCHA (até 2 minutos)...")
-            page.wait_for_function(
-                """() => {
-                    const recaptchaButton = document.querySelector('[aria-label*="não verificado"]');
-                    const verificadoSpan = document.querySelector('[aria-label*="verificado"]');
-                    return verificadoSpan !== null;
-                }""",
-                timeout=120_000
-            )
-            logger.info("✅ reCAPTCHA aparentemente resolvido")
-        except Exception as e:
-            logger.warning(f"reCAPTCHA check timeout ou erro: {e}. Prosseguindo mesmo assim...")
-
-        # Clica em "Entrar" / "Login"
-        logger.info("Procurando botão de envio...")
-        submit_selectors = [
-            "button:has-text('Entrar')",
-            "button[type='submit']",
-            "input[type='submit']",
-            "button:has-text('Login')",
-            ".btn-entrar",
-        ]
-        
-        submit_found = False
-        for selector in submit_selectors:
+        # Clica em "Entrar" (botão do modal, não o do header)
+        logger.info("Clicando em Entrar no modal...")
+        for sel in ["button:has-text('Entrar')", "a:has-text('Entrar')", "input[type='submit']"]:
             try:
-                buttons = page.locator(selector)
-                count = buttons.count()
-                if count > 0:
-                    # Procura especificamente dentro do modal
-                    for i in range(count):
-                        button = buttons.nth(i)
-                        try:
-                            if button.is_visible(timeout=3_000):
-                                logger.info(f"Botão de envio encontrado: {selector} (index {i})")
-                                button.click()
-                                submit_found = True
-                                break
-                        except Exception:
-                            continue
-                    if submit_found:
+                btns = page.locator(sel).all()
+                for btn in btns:
+                    # O botão do modal fica visível e não é o link "Entrar" do header
+                    if btn.is_visible() and btn.get_attribute("class") != "header-entrar":
+                        btn.click()
+                        logger.info(f"Clicou em Entrar via '{sel}'")
                         break
-            except Exception as e:
-                logger.debug(f"Erro com seletor {selector}: {e}")
+                else:
+                    continue
+                break
+            except Exception:
                 continue
-        
-        if not submit_found:
-            logger.error("Nenhum botão de envio encontrado!")
-            self._screenshot_on_error("login_submit_button_not_found")
-            raise RuntimeError("Botão de envio do formulário não encontrado")
 
-        logger.info("Botão clicado. Aguardando resolução do reCAPTCHA (se houver)...")
-        
-        # Aguarda navegação pós-login: o menu "Federal" deve aparecer
-        # Aumentado para 120s pois o reCAPTCHA pode exigir intervenção manual
+        # Aguarda confirmação: o modal some (botão "Entrar" no header volta a estar
+        # ausente ou o link do usuário aparece)
+        logger.info("Aguardando confirmação de login (até 2 min para reCAPTCHA manual)...")
         try:
-            page.wait_for_selector("text=Federal", state="visible", timeout=120_000)
-            logger.info("✅ Login bem-sucedido — menu Federal detectado")
+            page.wait_for_selector("text=Assinatura Econet", state="hidden", timeout=120_000)
+            logger.info("✅ Login bem-sucedido — modal fechado")
         except Exception:
             self._screenshot_on_error("login_failed")
             raise RuntimeError(
-                "Login falhou ou timeout aguardando confirmação de login. "
-                "Verifique credenciais ou se o reCAPTCHA precisou de resolução manual."
+                "Login falhou ou timeout. Verifique credenciais ou resolva o reCAPTCHA manualmente."
+            )
+
+    def _try_click_recaptcha(self) -> None:
+        """
+        Tenta clicar automaticamente no checkbox reCAPTCHA 'Não sou um robô'.
+
+        O reCAPTCHA v2 (checkbox simples) fica dentro de um iframe.
+        Clicamos no checkbox — se o Google considerar o browser "confiável",
+        marca direto. Se pedir desafio visual, o operador resolve manualmente
+        (o browser fica visível para isso).
+        """
+        page = self._page
+        try:
+            # O reCAPTCHA fica num iframe com title="reCAPTCHA" ou src contendo "recaptcha"
+            recaptcha_frame = page.frame_locator(
+                "iframe[title='reCAPTCHA'], iframe[src*='recaptcha/api2/anchor']"
+            ).first
+
+            # O checkbox em si tem classe .recaptcha-checkbox-border ou id #recaptcha-anchor
+            checkbox = recaptcha_frame.locator(
+                "#recaptcha-anchor, .recaptcha-checkbox-border, .rc-anchor-center-item"
+            ).first
+            checkbox.wait_for(state="visible", timeout=6_000)
+            checkbox.click()
+            logger.info("reCAPTCHA checkbox clicado — aguardando validação do Google...")
+
+            # Aguarda 3s para o Google processar (animação do checkmark)
+            page.wait_for_timeout(3_000)
+
+            # Verifica se foi marcado (atributo aria-checked="true" no anchor)
+            checked = recaptcha_frame.locator(
+                "#recaptcha-anchor[aria-checked='true'], .recaptcha-checkbox-checked"
+            ).count()
+            if checked > 0:
+                logger.info("✅ reCAPTCHA resolvido automaticamente")
+            else:
+                logger.warning(
+                    "reCAPTCHA clicado mas aguardando validação. "
+                    "Se um desafio visual aparecer no browser, resolva manualmente."
+                )
+        except Exception as e:
+            logger.warning(
+                f"Não foi possível clicar no reCAPTCHA automaticamente: {e}. "
+                "Resolva manualmente no browser se necessário."
             )
 
     # ------------------------------------------------------------------
     # Navegação principal
     # ------------------------------------------------------------------
 
-    def _navigate_to_pis_cofins_search(self) -> None:
+    def _handle_inline_login_if_needed(self, username: str, password: str) -> bool:
+        """
+        Detecta se o Econet está exibindo o formulário inline de login
+        (aparece quando o usuário tenta acessar conteúdo protegido sem estar logado).
+
+        Formulário inline confirmado via screenshot:
+        - Label "Nome de Usuário" com input placeholder="nome_usuario"
+        - Label "Senha"
+        - reCAPTCHA "Não sou um robô"
+        - Botão azul "FAZER LOGIN"
+
+        Se detectado, faz login e aguarda a área de busca aparecer.
+
+        Returns:
+            True se fez login inline, False se não havia formulário.
+        """
+        import time
+        page = self._page
+
+        inline_form_sel = "input[placeholder='nome_usuario'], button:has-text('FAZER LOGIN')"
+        try:
+            page.wait_for_selector(inline_form_sel, state="visible", timeout=4_000)
+        except Exception:
+            return False  # Formulário inline não está presente
+
+        logger.info("Formulário de login inline detectado — fazendo login...")
+        self._fill_credentials_and_submit(username, password, "FAZER LOGIN")
+
+        # Aguarda o formulário de login sumir (usuário autenticado)
+        try:
+            page.wait_for_selector(
+                "button:has-text('FAZER LOGIN'), input[placeholder='nome_usuario']",
+                state="hidden",
+                timeout=120_000,
+            )
+            logger.info("✅ Login inline bem-sucedido")
+            time.sleep(1)
+            return True
+        except Exception:
+            self._screenshot_on_error("inline_login_failed")
+            raise RuntimeError("Login inline falhou. Verifique credenciais ou resolva o reCAPTCHA.")
+
+    def _navigate_to_pis_cofins_search(self, username: str = "", password: str = "") -> None:
         """
         Navega para Federal > PIS/COFINS > Busca do Produto.
-        A URL não muda (SPA), então usamos wait_for_selector para cada etapa.
+
+        Fluxo confirmado via screenshots:
+        1. Clicar em "Federal" no menu lateral abre dropdown
+        2. No dropdown, clicar em "PIS / COFINS" (item exato — não "Exclusão ICMS")
+        3. Se não estiver logado, o site exibe formulário inline com "FAZER LOGIN"
+        4. Após login (ou se já logado), a área de "Busca do Produto" fica visível
+
+        Args:
+            username/password: necessários apenas se o login inline for acionado
         """
+        import time
         page = self._page
 
         # 1. Clicar em "Federal" no menu lateral
-        page.locator("text=Federal").first.click()
-        logger.debug("Clicou em Federal")
-
-        # 2. Aguardar e clicar em PIS/COFINS (não "Exclusão ICMS - PIS/COFINS")
-        page.wait_for_selector("text=PIS / COFINS", state="visible", timeout=15_000)
-        # Procura especificamente por "PIS / COFINS" sem "Exclusão"
-        pis_cofins_links = page.locator('a:has-text("PIS / COFINS")')
-        # Filtra para pegar aquele que NÃO contém "Exclusão"
-        for i in range(pis_cofins_links.count()):
-            link = pis_cofins_links.nth(i)
-            text = link.inner_text()
-            if "PIS / COFINS" in text and "Exclusão" not in text:
-                link.click()
-                logger.debug("Clicou em PIS/COFINS (correto)")
+        logger.info("Clicando em Federal...")
+        for sel in ["a:has-text('Federal')", "span:has-text('Federal')", "text=Federal"]:
+            try:
+                el = page.locator(sel).first
+                el.wait_for(state="visible", timeout=6_000)
+                el.click()
+                logger.info("Clicou em Federal")
                 break
+            except Exception:
+                continue
+        time.sleep(1)
 
-        # 3. Aguardar e clicar na aba "Busca do Produto"
-        page.wait_for_selector("text=Busca do Produto", state="visible", timeout=15_000)
-        page.locator("text=Busca do Produto").first.click()
-        logger.debug("Clicou em Busca do Produto")
+        # 2. Clicar em "PIS / COFINS" no dropdown (texto exato do menu conforme screenshot)
+        logger.info("Clicando em PIS / COFINS...")
+        pis_clicked = False
+        for sel in [
+            "a:has-text('PIS / COFINS')",   # texto exato com espaços ao redor do /
+            "a:has-text('PIS/COFINS')",
+            "text=PIS / COFINS",
+            "text=PIS/COFINS",
+        ]:
+            try:
+                elements = page.locator(sel).all()
+                for el in elements:
+                    txt = el.inner_text(timeout=2_000)
+                    if "Exclus" not in txt:  # Ignora "Exclusão ICMS - PIS/COFINS"
+                        el.wait_for(state="visible", timeout=5_000)
+                        el.click()
+                        logger.info(f"Clicou em PIS/COFINS ('{txt.strip()}')")
+                        pis_clicked = True
+                        break
+                if pis_clicked:
+                    break
+            except Exception:
+                continue
 
-        # Aguarda o formulário de busca aparecer
-        page.wait_for_selector(
-            "input[name='ncm'], input[placeholder*='NCM'], input[placeholder*='ncm']",
-            state="visible",
-            timeout=15_000,
+        if not pis_clicked:
+            self._screenshot_on_error("nav_piscofins_not_found")
+            raise RuntimeError("Não encontrou 'PIS / COFINS' no dropdown do menu Federal.")
+
+        time.sleep(1)
+
+        # 3. Verifica se apareceu o formulário de login inline (não está autenticado)
+        if username:
+            self._handle_inline_login_if_needed(username, password)
+
+        # 4. Clica no link "Busca do produto:" dentro da página PIS/COFINS.
+        # Texto confirmado via screenshot: "Busca do produto:" (minúsculo, com dois-pontos).
+        # É um hyperlink <a> no corpo do texto, não uma aba/tab.
+        logger.info("Procurando link 'Busca do produto'...")
+        busca_clicked = False
+        for sel in [
+            "a:has-text('Busca do produto')",    # texto exato conforme screenshot
+            "a:has-text('Busca do Produto')",    # variação com maiúscula
+            "a:has-text('Busca de produto')",
+            "a:has-text('Busca de Produto')",
+        ]:
+            try:
+                el = page.locator(sel).first
+                el.wait_for(state="visible", timeout=10_000)
+                el.click()
+                logger.info(f"Clicou no link via '{sel}'")
+                busca_clicked = True
+                break
+            except Exception:
+                continue
+
+        if not busca_clicked:
+            self._screenshot_on_error("nav_busca_not_found")
+            raise RuntimeError(
+                "Não encontrou o link 'Busca do produto' na página PIS/COFINS. "
+                "Veja screenshot nav_busca_not_found."
+            )
+        time.sleep(1)
+
+        # 5. Após clicar em Busca do produto, pode aparecer login inline novamente
+        if username:
+            self._handle_inline_login_if_needed(username, password)
+
+        # 6. Aguarda o formulário de busca de NCM (campo para digitar o código)
+        busca_sel = (
+            "input[name='ncm'], input[name='codigo'], "
+            "input[placeholder*='NCM'], input[placeholder*='ncm'], "
+            "input[placeholder*='Código'], input[placeholder*='codigo']"
         )
-        logger.debug("Formulário de busca de NCM visível")
+        try:
+            page.wait_for_selector(busca_sel, state="visible", timeout=15_000)
+            logger.info("✅ Formulário de busca de NCM visível")
+        except Exception:
+            self._screenshot_on_error("nav_form_not_found")
+            raise RuntimeError(
+                "Formulário de NCM não apareceu após clicar em 'Busca do produto'. "
+                "Veja screenshot nav_form_not_found."
+            )
 
     def _fill_ncm_search_form(self, ncm_code: str) -> None:
         """
@@ -545,7 +738,10 @@ class EconetScraper:
         logger.info(f"Buscando NCM: {normalized}")
 
         try:
-            self._navigate_to_pis_cofins_search()
+            self._navigate_to_pis_cofins_search(
+                username=self._username,
+                password=self._password,
+            )
             self._fill_ncm_search_form(normalized)
             result = self._select_ncm_from_results(normalized)
 
