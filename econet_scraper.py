@@ -187,6 +187,93 @@ async def _js_iframe(page: object, script: str):
     }}""")
 
 
+_JS_LINHAS_VISIVEIS = """
+    const win = f2.contentDocument.defaultView || f2.contentWindow;
+    function visivel(el) {
+        try {
+            let cur = el;
+            while (cur && cur !== f2.contentDocument.body) {
+                const st = win.getComputedStyle(cur);
+                if (st.display === 'none' || st.visibility === 'hidden') return false;
+                cur = cur.parentElement;
+            }
+            return true;
+        } catch(e) { return true; }
+    }
+    const rows = Array.from(f2.contentDocument.querySelectorAll('table tr'))
+        .filter(r => visivel(r));
+    return rows.map(r =>
+        Array.from(r.querySelectorAll('td,th'))
+            .map(c => c.innerText.trim().replace(/\\n+/g,' '))
+            .join('||')
+    ).join('\\n');
+"""
+
+
+def _parse_observacoes(body_text: str) -> str:
+    """Extrai conteúdo da seção Observações (antes de CST e EFD-Contribuições)."""
+    lines = body_text.splitlines()
+    obs_start = -1
+    for i, line in enumerate(lines):
+        if line.strip() == "Observações":
+            obs_start = i + 1
+            break
+    if obs_start == -1:
+        return ""
+    obs_lines = []
+    stop_words = ["Código da Situação Tributária", "EFD-Contribuições"]
+    for line in lines[obs_start:]:
+        if any(sw in line for sw in stop_words):
+            break
+        s = line.strip()
+        if s:
+            obs_lines.append(s)
+    return "\n".join(obs_lines)
+
+
+def _extrair_aba_simples(raw: str) -> tuple[str, str, str]:
+    """Extrai (pis, cofins, legislacao) do raw tabular de uma aba (Suspensão/ZFM)."""
+    pis = cofins = legislacao = ""
+    if not raw or raw.startswith("ERR"):
+        return pis, cofins, legislacao
+    in_aliquota = False
+    for line in raw.splitlines():
+        cells = [c.strip() for c in line.split("||")]
+        if not any(cells):
+            continue
+        joined = " ".join(cells)
+        if "Regime de Tributação" in joined or ("Alíquota" in joined and len(cells) == 1):
+            in_aliquota = True
+            continue
+        if not in_aliquota:
+            continue
+        pct_idx = [i for i, c in enumerate(cells) if "%" in c or "Vide" in c]
+        if not pct_idx:
+            continue
+        if len(pct_idx) >= 2:
+            pis = cells[pct_idx[0]]
+            cofins = cells[pct_idx[1]]
+        else:
+            pis = cofins = cells[pct_idx[0]]
+        non_pct = [cells[i] for i in range(len(cells))
+                   if i not in pct_idx and cells[i] and len(cells[i]) > 5]
+        if non_pct:
+            legislacao = non_pct[-1]
+        break
+    return pis, cofins, legislacao
+
+
+async def _clicar_aba(page, nome_aba: str) -> bool:
+    """Clica na aba pelo nome no TabbedPanel do iframe. Retorna True se encontrou."""
+    result = await _js_iframe(page, f"""
+        const tabs = Array.from(f2.contentDocument.querySelectorAll('li.TabbedPanelsTab'));
+        const tab = tabs.find(t => t.innerText.trim().includes('{nome_aba}'));
+        if (tab) {{ tab.click(); return 'ok'; }}
+        return 'not found';
+    """)
+    return result == "ok"
+
+
 async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
     """Busca um NCM via JS direto no iframe e retorna os dados extraídos."""
     print(f"  Buscando NCM {ncm_formatado}...")
@@ -199,19 +286,19 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
     }}""")
     await page.wait_for_timeout(3000)  # formulário recarregar
 
-    # 1. Preenche campo NCM caractere a caractere e submete
+    # 1. Preenche campo NCM e submete
     await _js_iframe(page, f"""
         const inp = f2.contentDocument.getElementById('inpCodigoNcm');
         inp.focus();
         inp.value = '{ncm_formatado}';
         return 'ok';
     """)
-    await page.wait_for_timeout(1200)  # pausa após digitar
+    await page.wait_for_timeout(1200)
     await _js_iframe(page, """
         f2.contentDocument.querySelector('input[value="Pesquisar"]').click();
         return 'ok';
     """)
-    await page.wait_for_timeout(3500)  # resultados da pesquisa carregar
+    await page.wait_for_timeout(3500)
 
     # 2. Clica no radio do NCM mais específico sem "Ex "
     prefix = ncm_formatado[:7]
@@ -233,51 +320,33 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
     """)
     await page.wait_for_timeout(4000)  # página de detalhes do NCM carregar
 
-    # 3. Extrai dados via JS — apenas linhas VISÍVEIS (ignora abas escondidas como ZFM/Exportação)
-    raw = await _js_iframe(page, """
-        const win = f2.contentDocument.defaultView || f2.contentWindow;
-        function visivel(el) {
-            try {
-                let cur = el;
-                while (cur && cur !== f2.contentDocument.body) {
-                    const st = win.getComputedStyle(cur);
-                    if (st.display === 'none' || st.visibility === 'hidden') return false;
-                    cur = cur.parentElement;
-                }
-                return true;
-            } catch(e) { return true; }
-        }
-        const rows = Array.from(f2.contentDocument.querySelectorAll('table tr'))
-            .filter(r => visivel(r));
-        return rows.map(r =>
-            Array.from(r.querySelectorAll('td,th'))
-                .map(c => c.innerText.trim().replace(/\\n+/g,' '))
-                .join('||')
-        ).join('\\n');
-    """)
-
     data = {
         "descricao": "", "pis_cum": "", "cofins_cum": "",
-        "pis_ncum": "", "cofins_ncum": "", "regime": "", "legislacao": []
+        "pis_ncum": "", "cofins_ncum": "", "regime": "", "legislacao": [],
+        "obs_rg": "",
+        "susp_pis": "", "susp_cofins": "", "susp_legislacao": "", "susp_obs": "",
+        "zfm_pis": "", "zfm_cofins": "", "zfm_legislacao": "", "zfm_obs": "",
     }
 
+    # ── 3. Regra Geral (aba padrão, já ativa) ──────────────────────────────
+    raw = await _js_iframe(page, _JS_LINHAS_VISIVEIS)
+
     if not raw or raw.startswith("ERR"):
-        print(f"     AVISO extração: {raw}")
+        print(f"     AVISO extração RG: {raw}")
     else:
         ncm_desc_rows = []
         in_aliquota = False
         for line in raw.splitlines():
             cells = [c.strip() for c in line.split("||")]
-            if not any(cells): continue
-
+            if not any(cells):
+                continue
             joined = " ".join(cells)
-            if "Regime de Tributação" in joined or (cells[0] == "Regime de Tributação"):
+            if "Regime de Tributação" in joined or cells[0] == "Regime de Tributação":
                 in_aliquota = True
                 continue
             if "Alíquota" in joined and len(cells) == 1:
                 in_aliquota = True
                 continue
-
             if not in_aliquota:
                 if len(cells) >= 2 and cells[0] not in ("", "NCM", "DESCRIÇÃO", "Produto"):
                     ncm_desc_rows.append(cells)
@@ -288,11 +357,8 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
                 pis    = cells[1]
                 cofins = cells[2]
                 leg    = cells[3] if len(cells) > 3 else ""
-
-                # Só processa linhas com alíquotas reais (contém % ou "Vide")
                 if not ("%" in pis or "Vide" in pis or "%" in cofins):
                     continue
-
                 if "Cumulativo" in regime and "Não" not in regime:
                     data["pis_cum"]    = pis
                     data["cofins_cum"] = cofins
@@ -303,24 +369,21 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
                     data["cofins_ncum"] = cofins
                     if leg: data["legislacao"].append(f"N.Cum: {leg}")
                 elif "Simples" in regime:
-                    pass  # ignora linha Simples
+                    pass
                 elif regime and "%" in pis:
-                    # Monofásico: mesmo valor em todos os regimes
                     data["pis_cum"] = data["pis_ncum"] = pis
                     data["cofins_cum"] = data["cofins_ncum"] = cofins
                     if leg: data["legislacao"].append(leg)
                     if not data["regime"]: data["regime"] = regime
-
         if ncm_desc_rows:
             last = ncm_desc_rows[-1]
             data["descricao"] = " — ".join(c for c in last if c and c not in ("NCM", "DESCRIÇÃO"))
 
-    # Detecta regime especial via texto completo
-    body = await _js_iframe(page, "return f2.contentDocument.body.innerText.substring(0,2000);")
-    if isinstance(body, str):
-        if "Bebidas Frias" in body:
+    # Detecta regime especial e extrai Observações da Regra Geral
+    body_rg = await _js_iframe(page, "return f2.contentDocument.body.innerText.substring(0,10000);")
+    if isinstance(body_rg, str):
+        if "Bebidas Frias" in body_rg:
             data["regime"] = "Bebidas Frias (Monofásico)"
-            # Bebidas Frias: tabela tem 6 colunas — PIS na col 5, COFINS na col 6
             if not data["pis_cum"]:
                 bf_raw = await _js_iframe(page, """
                     const win = f2.contentDocument.defaultView || f2.contentWindow;
@@ -350,12 +413,37 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
                     parts = bf_raw.split("||")
                     data["pis_cum"] = data["pis_ncum"] = parts[0].strip()
                     data["cofins_cum"] = data["cofins_ncum"] = parts[1].strip()
-        elif "Incidência Monofásica" in body or "Monofásico" in body:
+        elif "Incidência Monofásica" in body_rg or "Monofásico" in body_rg:
             data["regime"] = "Monofásico"
+        data["obs_rg"] = _parse_observacoes(body_rg)
+
+    # ── 4. Aba Suspensão ───────────────────────────────────────────────────
+    if await _clicar_aba(page, "Suspensão"):
+        await page.wait_for_timeout(2000)
+        raw_susp = await _js_iframe(page, _JS_LINHAS_VISIVEIS)
+        body_susp = await _js_iframe(page, "return f2.contentDocument.body.innerText.substring(0,10000);")
+        pis, cofins, leg = _extrair_aba_simples(raw_susp)
+        data["susp_pis"]       = pis
+        data["susp_cofins"]    = cofins
+        data["susp_legislacao"] = leg
+        data["susp_obs"]       = _parse_observacoes(body_susp) if isinstance(body_susp, str) else ""
+    else:
+        print("     Aba Suspensão não encontrada")
+
+    # ── 5. Aba ZFM ────────────────────────────────────────────────────────
+    if await _clicar_aba(page, "ZFM"):
+        await page.wait_for_timeout(2000)
+        raw_zfm = await _js_iframe(page, _JS_LINHAS_VISIVEIS)
+        body_zfm = await _js_iframe(page, "return f2.contentDocument.body.innerText.substring(0,10000);")
+        pis, cofins, leg = _extrair_aba_simples(raw_zfm)
+        data["zfm_pis"]       = pis
+        data["zfm_cofins"]    = cofins
+        data["zfm_legislacao"] = leg
+        data["zfm_obs"]       = _parse_observacoes(body_zfm) if isinstance(body_zfm, str) else ""
+    else:
+        print("     Aba ZFM não encontrada")
 
     data["legislacao"] = " | ".join(data["legislacao"])
-
-    # (navegação de volta ao form é feita no início do próximo buscar_ncm via f2.src)
 
     print(f"     OK PIS={data['pis_cum']} | COFINS={data['cofins_cum']} | Regime={data['regime']}")
     return data
@@ -371,13 +459,22 @@ def _registrar_historico(ws_hist, ncm_fmt: str, dados_ant: dict, dados_nov: dict
     from datetime import datetime
     agora = datetime.now().strftime("%Y-%m-%d %H:%M")
     nomes = {
-        "descricao":   "Descrição",
-        "pis_cum":     "PIS Cumulativo",
-        "cofins_cum":  "COFINS Cumulativo",
-        "pis_ncum":    "PIS Não Cumulativo",
-        "cofins_ncum": "COFINS Não Cumulativo",
-        "regime":      "Regime",
-        "legislacao":  "Legislação",
+        "descricao":       "Descrição",
+        "pis_cum":         "PIS Cumulativo",
+        "cofins_cum":      "COFINS Cumulativo",
+        "pis_ncum":        "PIS Não Cumulativo",
+        "cofins_ncum":     "COFINS Não Cumulativo",
+        "regime":          "Regime",
+        "legislacao":      "Legislação",
+        "obs_rg":          "Observações (Regra Geral)",
+        "susp_pis":        "Suspensão - PIS",
+        "susp_cofins":     "Suspensão - COFINS",
+        "susp_legislacao": "Suspensão - Legislação",
+        "susp_obs":        "Suspensão - Observações",
+        "zfm_pis":         "ZFM - PIS",
+        "zfm_cofins":      "ZFM - COFINS",
+        "zfm_legislacao":  "ZFM - Legislação",
+        "zfm_obs":         "ZFM - Observações",
     }
 
     # NCM é novo se todos os campos anteriores relevantes estão vazios
@@ -415,18 +512,27 @@ def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict]):
         ws.title = "Plan1"
 
     # Lê estado atual ANTES de escrever — base para comparação histórica
-    campos = ["descricao", "pis_cum", "cofins_cum", "pis_ncum", "cofins_ncum", "regime", "legislacao"]
+    campos = [
+        "descricao", "pis_cum", "cofins_cum", "pis_ncum", "cofins_ncum", "regime", "legislacao",
+        "obs_rg",
+        "susp_pis", "susp_cofins", "susp_legislacao", "susp_obs",
+        "zfm_pis", "zfm_cofins", "zfm_legislacao", "zfm_obs",
+    ]
     snapshot = {}
     for r in ws.iter_rows(min_row=2):
         if r[0].value:
-            vals = [r[i].value if i < len(r) else None for i in range(2, 9)]
+            # cols C(2) through R(17) → indices 2..17
+            vals = [r[i].value if i < len(r) else None for i in range(2, 18)]
             snapshot[r[0].row] = dict(zip(campos, vals))
 
     headers = [
         "NCM", "NCM Econet", "Descrição",
         "PIS Cumulativo", "COFINS Cumulativo",
         "PIS Não Cumulativo", "COFINS Não Cumulativo",
-        "Regime", "Legislação"
+        "Regime", "Legislação",
+        "Observações (Regra Geral)",
+        "Suspensão - PIS", "Suspensão - COFINS", "Suspensão - Legislação", "Suspensão - Observações",
+        "ZFM - PIS", "ZFM - COFINS", "ZFM - Legislação", "ZFM - Observações",
     ]
     hfill = PatternFill("solid", fgColor="1F4E79")
     hfont = Font(bold=True, color="FFFFFF")
@@ -470,19 +576,29 @@ def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict]):
         dados_ant = snapshot.get(ri, {})
         total_linhas_hist += _registrar_historico(ws_hist, formatar_ncm(ncm), dados_ant, r)
 
-        ws.cell(ri, 1, ncm)
-        ws.cell(ri, 2, formatar_ncm(ncm))
-        ws.cell(ri, 3, r["descricao"])
-        ws.cell(ri, 4, r["pis_cum"])
-        ws.cell(ri, 5, r["cofins_cum"])
-        ws.cell(ri, 6, r["pis_ncum"])
-        ws.cell(ri, 7, r["cofins_ncum"])
-        ws.cell(ri, 8, r["regime"])
-        ws.cell(ri, 9, r["legislacao"])
-        for ci in range(1, 10):
+        ws.cell(ri,  1, ncm)
+        ws.cell(ri,  2, formatar_ncm(ncm))
+        ws.cell(ri,  3, r["descricao"])
+        ws.cell(ri,  4, r["pis_cum"])
+        ws.cell(ri,  5, r["cofins_cum"])
+        ws.cell(ri,  6, r["pis_ncum"])
+        ws.cell(ri,  7, r["cofins_ncum"])
+        ws.cell(ri,  8, r["regime"])
+        ws.cell(ri,  9, r["legislacao"])
+        ws.cell(ri, 10, r["obs_rg"])
+        ws.cell(ri, 11, r["susp_pis"])
+        ws.cell(ri, 12, r["susp_cofins"])
+        ws.cell(ri, 13, r["susp_legislacao"])
+        ws.cell(ri, 14, r["susp_obs"])
+        ws.cell(ri, 15, r["zfm_pis"])
+        ws.cell(ri, 16, r["zfm_cofins"])
+        ws.cell(ri, 17, r["zfm_legislacao"])
+        ws.cell(ri, 18, r["zfm_obs"])
+        for ci in range(1, 19):
             ws.cell(ri, ci).alignment = Alignment(wrap_text=True, vertical="top")
 
-    widths = [12, 13, 55, 18, 20, 20, 22, 28, 65]
+    widths = [12, 13, 55, 18, 20, 20, 22, 28, 65,
+              55, 14, 16, 50, 55, 14, 16, 50, 55]
     for ci, w in enumerate(widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = w
     ws.row_dimensions[1].height = 30
@@ -552,7 +668,11 @@ async def main():
                 dados = await buscar_ncm(page, ncm_fmt, busca_src)
             except Exception as e:
                 print(f"  ERRO no NCM {ncm_fmt}: {e}")
-                dados = {k: "" for k in ["descricao","pis_cum","cofins_cum","pis_ncum","cofins_ncum","regime","legislacao"]}
+                dados = {k: "" for k in [
+                    "descricao", "pis_cum", "cofins_cum", "pis_ncum", "cofins_ncum", "regime", "legislacao",
+                    "obs_rg", "susp_pis", "susp_cofins", "susp_legislacao", "susp_obs",
+                    "zfm_pis", "zfm_cofins", "zfm_legislacao", "zfm_obs",
+                ]}
             resultados.append(dados)
 
         await browser.close()
