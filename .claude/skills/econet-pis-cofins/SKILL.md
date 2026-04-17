@@ -16,7 +16,63 @@ a primeira configuração — sem interação humana, pronto para agendamento.
 - O usuário quer buscar alíquotas PIS/COFINS para um ou mais NCMs
 - O usuário menciona "Econet", "PIS/COFINS", "NCM" em conjunto com extração/automação
 - O usuário precisa atualizar uma planilha com dados tributários da Econet Editora
+- O usuário quer verificar se houve mudanças nas alíquotas de NCMs já cadastrados
 - O usuário quer agendar a extração de dados fiscais de forma autônoma
+
+## Funções Disponíveis
+
+A skill expõe **duas funções** que podem ser chamadas diretamente no chat:
+
+### buscar-incompletos
+Busca apenas os NCMs que ainda não têm dados preenchidos no Excel (coluna B ou PIS vazios).
+**Uso padrão — não sobrescreve dados existentes.**
+
+> Exemplos de como chamar:
+> - `/econet-pis-cofins buscar-incompletos`
+> - `/econet-pis-cofins` *(sem argumento — comportamento padrão)*
+> - `/econet-pis-cofins busque os ncms que estão sem informações`
+> - `/econet-pis-cofins preencha os ncms novos`
+
+**Comando executado:**
+```bash
+python econet_scraper.py
+```
+
+---
+
+### buscar-todos
+Busca **todos** os NCMs do Excel, incluindo os já preenchidos. Compara os dados retornados
+com o que estava salvo e registra qualquer mudança no sheet **Histórico** do `bcoDados.xlsx`.
+
+> Exemplos de como chamar:
+> - `/econet-pis-cofins buscar-todos`
+> - `/econet-pis-cofins verifique se houve mudanças nas alíquotas`
+> - `/econet-pis-cofins atualizar todos os ncms`
+> - `/econet-pis-cofins checar atualizações`
+
+**Comando executado:**
+```bash
+python econet_scraper.py --todos
+```
+
+**O que acontece no modo --todos:**
+1. Lê snapshot dos dados atuais antes de buscar
+2. Busca todos os NCMs no Econet
+3. Compara campo a campo com o snapshot anterior
+4. Se houver mudança → registra no sheet **Histórico** com: Data/Hora, NCM, Campo, Valor Anterior, Valor Novo
+5. Se não houver mudança → informa que tudo está atualizado
+
+---
+
+## Lógica de Decisão para o Assistente
+
+Ao receber um argumento na skill, identifique a intenção:
+
+- Palavras como "incompletos", "sem dados", "novos", "faltando", "preencher" → **buscar-incompletos**
+- Palavras como "todos", "atualizar", "verificar mudanças", "checar", "comparar", "histórico" → **buscar-todos**
+- Sem argumento ou argumento ambíguo → **buscar-incompletos** (padrão)
+
+---
 
 ## Pré-requisitos
 
@@ -33,43 +89,34 @@ playwright install chromium
 
 | Arquivo | Descrição |
 |---------|-----------|
-| `econet_scraper.py` | Script principal — única execução necessária |
-| `bcoDados.xlsx` | Input (col A = NCMs) + Output (cols B-I) |
+| `econet_scraper.py` | Script principal |
+| `bcoDados.xlsx` | Input (col A = NCMs) + Output (cols B-I) + Sheet Histórico |
 | `session.json` | Sessão salva após 1º login (gerado automaticamente) |
 | `bcoDados_resultado.xlsx` | Fallback quando o Excel original está aberto |
 
-## Workflow
+## Fluxo de Execução
 
-### Etapa 1 — Verificar dependências e arquivo Excel
-1. Confirmar que `playwright` e `openpyxl` estão instalados
-2. Verificar que `bcoDados.xlsx` existe com NCMs na coluna A
-3. Se o arquivo não existir, criá-lo com os NCMs informados pelo usuário
-
-### Etapa 2 — Executar o scraper
-```bash
-python econet_scraper.py
-```
-
-**Fluxo da 1ª execução (sem `session.json`):**
+**1ª execução (sem `session.json`):**
 1. Abre Chrome **visível**
 2. Navega até `https://www.econeteditora.com.br/`
-3. Preenche usuário e senha automaticamente
-4. Tenta resolver reCAPTCHA automaticamente (browser real, não headless)
-5. Se reCAPTCHA exigir desafio → aguarda resolução manual + detecta fechamento do modal
+3. Preenche usuário e senha automaticamente (digitação humanizada)
+4. Tenta resolver reCAPTCHA automaticamente
+5. Se reCAPTCHA exigir desafio → aguarda resolução manual
 6. Salva sessão em `session.json`
 7. Navega: Federal → PIS/COFINS → Busca do Produto
 8. Loop pelos NCMs: busca → seleciona → extrai → grava
-9. Salva resultados no Excel
 
 **Execuções seguintes (com `session.json`):**
 - Roda **headless** sem login nem reCAPTCHA
 - Ideal para agendamento autônomo
 
-### Etapa 3 — Verificar resultados
-Abrir `bcoDados.xlsx` e confirmar colunas B-I preenchidas:
+## Estrutura do Excel (bcoDados.xlsx)
+
+### Sheet Plan1 — Dados
 
 | Col | Campo |
 |-----|-------|
+| A | NCM (input) |
 | B | NCM Econet (ex: 8471.41.90) |
 | C | Descrição do produto |
 | D | PIS Cumulativo (%) |
@@ -79,12 +126,15 @@ Abrir `bcoDados.xlsx` e confirmar colunas B-I preenchidas:
 | H | Regime tributário |
 | I | Legislação |
 
-### Etapa 4 — Forçar novo login (se necessário)
-```bash
-rm session.json   # Linux/Mac
-del session.json  # Windows CMD
-```
-Na próxima execução, o fluxo completo de login será repetido.
+### Sheet Histórico — Mudanças detectadas (modo --todos)
+
+| Col | Campo |
+|-----|-------|
+| A | Data/Hora da verificação |
+| B | NCM |
+| C | Campo que mudou |
+| D | Valor Anterior |
+| E | Valor Novo |
 
 ## Credenciais Padrão
 
@@ -98,56 +148,26 @@ SENHA      = "ms6003"
 
 ## Regimes Detectados
 
-| Regime | Como é detectado | Exemplo |
-|--------|-----------------|---------|
-| Cumulativo / Não Cumulativo | Linhas com "Cumulativo" e "Não Cumulativo" na tabela | Computadores, plásticos |
-| Monofásico | Texto "Monofásico" visível no corpo da página | Automóveis |
-| Bebidas Frias (Monofásico) | Texto "Bebidas Frias" + tabela de 6 colunas | Refrigerantes |
-
-## Detalhes Técnicos Importantes
-
-### Estrutura de iframes do Econet
-```
-Página principal
-  └── #alvo (iframe f1)
-        └── iframe f2 (pis_cofins.php)
-              └── Abas: Regra Geral, ZFM, Exportação...
-```
-
-### Filtro de visibilidade
-O Econet mantém TODAS as abas no DOM simultaneamente (ZFM, Exportação etc.).
-O scraper usa `getComputedStyle` para ignorar linhas ocultas e capturar
-apenas dados da aba ativa (Regra Geral).
-
-### Reset entre buscas
-Em vez de navegar pela UI para voltar ao formulário, o script captura o `src`
-do iframe f2 e recarrega diretamente — reset confiável sem cliques na UI.
+| Regime | Exemplo |
+|--------|---------|
+| Cumulativo / Não Cumulativo | Computadores, plásticos, vestuário |
+| Monofásico | Automóveis, medicamentos, impressoras |
+| Bebidas Frias (Monofásico) | Refrigerantes, cervejas |
 
 ## Tratamento de Erros
 
-| Erro | Causa | Solução automática |
-|------|-------|-------------------|
-| `PermissionError` lendo Excel | Arquivo aberto no Excel | Lê via cópia temporária |
-| `PermissionError` salvando Excel | Arquivo aberto no Excel | Salva em `bcoDados_resultado.xlsx` |
-| Sessão expirada | Token venceu | Detecta e refaz login automaticamente |
-| reCAPTCHA com desafio | Google detectou automação | Aguarda resolução manual no browser visível |
-| `UnicodeEncodeError` | Terminal Windows cp1252 | stdout/stderr redirecionados para UTF-8 |
+| Erro | Solução automática |
+|------|--------------------|
+| `PermissionError` lendo Excel | Lê via cópia temporária |
+| `PermissionError` salvando Excel | Salva em `bcoDados_resultado.xlsx` |
+| Sessão expirada | Detecta e refaz login automaticamente |
+| reCAPTCHA com desafio | Aguarda resolução manual no browser visível |
+| NCM retorna dados vazios | Detectado pelo filtro PIS vazio — retentado na próxima execução |
 
 ## Agendamento (Windows Task Scheduler)
 
 Após a 1ª execução com `session.json` criado:
 
 - **Programa:** `python`
-- **Argumentos:** `econet_scraper.py`
+- **Argumentos:** `econet_scraper.py` ou `econet_scraper.py --todos`
 - **Diretório:** caminho completo do projeto
-- **Frequência recomendada:** diária ou semanal conforme necessidade do cliente
-
-## Resultados Validados
-
-| NCM | PIS | COFINS | Regime |
-|-----|-----|--------|--------|
-| 8471.41.90 | 0,65% | 3,00% | Cumulativo / Não Cumulativo |
-| 3926.90.90 | 0,65% | 3,00% | Cumulativo / Não Cumulativo |
-| 6109.10.00 | 0,65% | 3,00% | Cumulativo / Não Cumulativo |
-| 8703.21.10 | 2,00% | 9,60% | Monofásico |
-| 2202.10.00 | 1,86% | 8,54% | Bebidas Frias (Monofásico) |
