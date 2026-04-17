@@ -41,27 +41,36 @@ def formatar_ncm(raw) -> str:
     return f"{s[:4]}.{s[4:6]}.{s[6:]}"
 
 
-def ler_ncms() -> list[tuple[int, int]]:
-    """Retorna lista de (linha_excel, ncm_int) apenas para linhas sem dados (col B vazia)."""
-    tmp = None
+def _abrir_workbook(read_only=True):
+    """Abre bcoDados.xlsx, usando cópia temporária se estiver bloqueado."""
     try:
-        wb = openpyxl.load_workbook(XLSX_PATH, read_only=True)
+        wb = openpyxl.load_workbook(XLSX_PATH, read_only=read_only)
+        return wb, None
     except PermissionError:
-        # Arquivo bloqueado pelo Excel: lê via cópia temporária
         tmp = XLSX_PATH.parent / "_tmp_read.xlsx"
         shutil.copy2(XLSX_PATH, tmp)
-        wb = openpyxl.load_workbook(tmp, read_only=True)
+        return openpyxl.load_workbook(tmp, read_only=read_only), tmp
+
+
+def ler_ncms(apenas_incompletos: bool = True) -> list[tuple[int, int]]:
+    """Retorna lista de (linha_excel, ncm_int).
+
+    apenas_incompletos=True  → somente linhas onde col B ou col D (PIS) está vazia.
+    apenas_incompletos=False → todas as linhas com valor na col A.
+    """
+    wb, tmp = _abrir_workbook(read_only=True)
     try:
         ws = wb.active
         entradas = []
         for r in ws.iter_rows(min_row=2):
             if not r[0].value:
                 continue
-            # Considera incompleta se col B (NCM fmt) ou col D (PIS) estiver vazia
-            incompleta = (len(r) < 2 or not r[1].value) or (len(r) < 4 or not r[3].value)
-            if incompleta:
-                ncm_int = int(str(r[0].value).replace(".", ""))
-                entradas.append((r[0].row, ncm_int))
+            if apenas_incompletos:
+                incompleta = (len(r) < 2 or not r[1].value) or (len(r) < 4 or not r[3].value)
+                if not incompleta:
+                    continue
+            ncm_int = int(str(r[0].value).replace(".", ""))
+            entradas.append((r[0].row, ncm_int))
     finally:
         wb.close()
         if tmp and tmp.exists():
@@ -70,6 +79,32 @@ def ler_ncms() -> list[tuple[int, int]]:
             except Exception:
                 pass
     return entradas
+
+
+def ler_dados_existentes() -> dict[int, dict]:
+    """Lê os dados atuais do Excel para cada linha com NCM preenchido.
+
+    Retorna {linha: {campo: valor}} para comparação posterior.
+    """
+    campos = ["descricao", "pis_cum", "cofins_cum", "pis_ncum", "cofins_ncum", "regime", "legislacao"]
+    wb, tmp = _abrir_workbook(read_only=True)
+    try:
+        ws = wb.active
+        dados = {}
+        for r in ws.iter_rows(min_row=2, values_only=False):
+            if not r[0].value:
+                continue
+            # colunas C(2) a I(8) → índices 2-8
+            vals = [r[i].value if i < len(r) else None for i in range(2, 9)]
+            dados[r[0].row] = dict(zip(campos, vals))
+    finally:
+        wb.close()
+        if tmp and tmp.exists():
+            try:
+                tmp.unlink()
+            except Exception:
+                pass
+    return dados
 
 
 async def fazer_login(page):
@@ -351,7 +386,31 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
     return data
 
 
-def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict]):
+def _registrar_historico(ws_hist, ncm_fmt: str, dados_ant: dict, dados_nov: dict):
+    """Compara campos e grava no sheet Histórico as diferenças encontradas."""
+    from datetime import datetime
+    agora = datetime.now().strftime("%Y-%m-%d %H:%M")
+    nomes = {
+        "descricao":   "Descrição",
+        "pis_cum":     "PIS Cumulativo",
+        "cofins_cum":  "COFINS Cumulativo",
+        "pis_ncum":    "PIS Não Cumulativo",
+        "cofins_ncum": "COFINS Não Cumulativo",
+        "regime":      "Regime",
+        "legislacao":  "Legislação",
+    }
+    mudancas = 0
+    for campo, nome in nomes.items():
+        ant = str(dados_ant.get(campo) or "").strip()
+        nov = str(dados_nov.get(campo) or "").strip()
+        if ant != nov:
+            ws_hist.append([agora, ncm_fmt, nome, ant, nov])
+            mudancas += 1
+    return mudancas
+
+
+def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict],
+                 dados_anteriores: dict[int, dict] | None = None):
     destino = XLSX_PATH
     try:
         wb = openpyxl.load_workbook(XLSX_PATH)
@@ -379,7 +438,31 @@ def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict]):
         c.font = hfont
         c.alignment = Alignment(horizontal="center", wrap_text=True)
 
+    # Sheet de histórico (cria se não existir)
+    if "Histórico" not in wb.sheetnames:
+        ws_hist = wb.create_sheet("Histórico")
+        hist_headers = ["Data/Hora", "NCM", "Campo", "Valor Anterior", "Valor Novo"]
+        ws_hist.append(hist_headers)
+        hfill_hist = PatternFill("solid", fgColor="1F4E79")
+        hfont_hist = Font(bold=True, color="FFFFFF")
+        for ci, h in enumerate(hist_headers, 1):
+            c = ws_hist.cell(row=1, column=ci, value=h)
+            c.fill = hfill_hist
+            c.font = hfont_hist
+            c.alignment = Alignment(horizontal="center")
+        for w, col in zip([18, 13, 22, 40, 40], ["A","B","C","D","E"]):
+            ws_hist.column_dimensions[col].width = w
+    else:
+        ws_hist = wb["Histórico"]
+
+    total_mudancas = 0
     for (ri, ncm), r in zip(entradas, resultados):
+        # Registra histórico se modo --todos e dados anteriores disponíveis
+        if dados_anteriores and ri in dados_anteriores:
+            total_mudancas += _registrar_historico(
+                ws_hist, formatar_ncm(ncm), dados_anteriores[ri], r
+            )
+
         ws.cell(ri, 1, ncm)
         ws.cell(ri, 2, formatar_ncm(ncm))
         ws.cell(ri, 3, r["descricao"])
@@ -399,12 +482,24 @@ def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict]):
 
     wb.save(destino)
     print(f"\n💾 Salvo: {destino}")
+    if dados_anteriores is not None:
+        if total_mudancas:
+            print(f"📝 {total_mudancas} mudança(s) registrada(s) no sheet Histórico.")
+        else:
+            print("✅ Nenhuma mudança detectada em relação aos dados anteriores.")
 
 
 async def main():
-    entradas = ler_ncms()
+    modo_todos = "--todos" in sys.argv
+    entradas = ler_ncms(apenas_incompletos=not modo_todos)
     ncms = [ncm for _, ncm in entradas]
-    print(f"📋 {len(entradas)} NCMs sem dados encontrados: {[formatar_ncm(n) for n in ncms]}")
+
+    if modo_todos:
+        print(f"🔄 Modo --todos: {len(entradas)} NCMs serão verificados (incluindo já preenchidos)")
+        dados_anteriores = ler_dados_existentes()
+    else:
+        print(f"📋 {len(entradas)} NCMs sem dados encontrados: {[formatar_ncm(n) for n in ncms]}")
+        dados_anteriores = None
 
     sessao_existe = SESSION.exists()
 
@@ -458,7 +553,7 @@ async def main():
 
         await browser.close()
 
-    salvar_excel(entradas, resultados)
+    salvar_excel(entradas, resultados, dados_anteriores)
     print("\n🎉 Concluído! Todos os NCMs processados.")
 
 
