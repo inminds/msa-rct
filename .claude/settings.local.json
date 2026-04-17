@@ -6,7 +6,8 @@
       "mcp__Claude_in_Chrome__computer",
       "mcp__Claude_in_Chrome__find",
       "Bash(mkdir -p \"C:\\\\Users\\\\VitorVeloso\\\\OneDrive - InMinds Technology\\\\Documentos\\\\InMinds\\\\core_teste\\\\.claude\\\\skills\\\\econet-pis-cofins\")",
-      "Bash(cp -r \"C:\\\\Users\\\\VitorVeloso\\\\.claude\\\\skills\\\\econet-pis-cofins/\"* \"C:\\\\Users\\\\VitorVeloso\\\\OneDrive - InMinds Technology\\\\Documentos\\\\InMinds\\\\core_teste\\\\.claude\\\\skills\\\\econet-pis-cofins/\")"
+      "Bash(cp -r \"C:\\\\Users\\\\VitorVeloso\\\\.claude\\\\skills\\\\econet-pis-cofins/\"* \"C:\\\\Users\\\\VitorVeloso\\\\OneDrive - InMinds Technology\\\\Documentos\\\\InMinds\\\\core_teste\\\\.claude\\\\skills\\\\econet-pis-cofins/\")",
+      "Bash(python econet_scraper.py)"
     ]
   }
 }

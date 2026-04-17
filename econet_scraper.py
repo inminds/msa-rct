@@ -41,7 +41,8 @@ def formatar_ncm(raw) -> str:
     return f"{s[:4]}.{s[4:6]}.{s[6:]}"
 
 
-def ler_ncms() -> list[int]:
+def ler_ncms() -> list[tuple[int, int]]:
+    """Retorna lista de (linha_excel, ncm_int) apenas para linhas sem dados (col B vazia)."""
     tmp = None
     try:
         wb = openpyxl.load_workbook(XLSX_PATH, read_only=True)
@@ -52,16 +53,23 @@ def ler_ncms() -> list[int]:
         wb = openpyxl.load_workbook(tmp, read_only=True)
     try:
         ws = wb.active
-        ncms = [int(str(r[0].value).replace(".", "")) for r in ws.iter_rows(min_row=2)
-                if r[0].value and (len(r) < 2 or not r[1].value)]
+        entradas = []
+        for r in ws.iter_rows(min_row=2):
+            if not r[0].value:
+                continue
+            # Considera incompleta se col B (NCM fmt) ou col D (PIS) estiver vazia
+            incompleta = (len(r) < 2 or not r[1].value) or (len(r) < 4 or not r[3].value)
+            if incompleta:
+                ncm_int = int(str(r[0].value).replace(".", ""))
+                entradas.append((r[0].row, ncm_int))
     finally:
         wb.close()
         if tmp and tmp.exists():
             try:
                 tmp.unlink()
             except Exception:
-                pass  # limpa na próxima execução
-    return ncms
+                pass
+    return entradas
 
 
 async def fazer_login(page):
@@ -332,7 +340,7 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
     return data
 
 
-def salvar_excel(ncms: list[int], resultados: list[dict]):
+def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict]):
     destino = XLSX_PATH
     try:
         wb = openpyxl.load_workbook(XLSX_PATH)
@@ -360,7 +368,7 @@ def salvar_excel(ncms: list[int], resultados: list[dict]):
         c.font = hfont
         c.alignment = Alignment(horizontal="center", wrap_text=True)
 
-    for ri, (ncm, r) in enumerate(zip(ncms, resultados), 2):
+    for (ri, ncm), r in zip(entradas, resultados):
         ws.cell(ri, 1, ncm)
         ws.cell(ri, 2, formatar_ncm(ncm))
         ws.cell(ri, 3, r["descricao"])
@@ -383,8 +391,9 @@ def salvar_excel(ncms: list[int], resultados: list[dict]):
 
 
 async def main():
-    ncms = ler_ncms()
-    print(f"📋 {len(ncms)} NCMs encontrados: {ncms}")
+    entradas = ler_ncms()
+    ncms = [ncm for _, ncm in entradas]
+    print(f"📋 {len(entradas)} NCMs sem dados encontrados: {[formatar_ncm(n) for n in ncms]}")
 
     sessao_existe = SESSION.exists()
 
@@ -427,7 +436,7 @@ async def main():
         busca_src = await navegar_pis_cofins(page)
 
         resultados = []
-        for ncm in ncms:
+        for _, ncm in entradas:
             ncm_fmt = formatar_ncm(ncm)
             try:
                 dados = await buscar_ncm(page, ncm_fmt, busca_src)
@@ -438,7 +447,7 @@ async def main():
 
         await browser.close()
 
-    salvar_excel(ncms, resultados)
+    salvar_excel(entradas, resultados)
     print("\n🎉 Concluído! Todos os NCMs processados.")
 
 
