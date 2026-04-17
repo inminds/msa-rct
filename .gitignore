@@ -4,3 +4,8 @@ bcoDados_resultado.xlsx
 __pycache__/
 *.pyc
 .env
+.env.local
+node_modules/
+.data/
+rpa_ncm_scanner/
+screenshot.png
