@@ -75,12 +75,19 @@ def ler_ncms() -> list[tuple[int, int]]:
 async def fazer_login(page):
     print("🔐 Abrindo tela de login...")
     await page.goto(ECONET_URL, wait_until="domcontentloaded", timeout=60000)
-    await page.wait_for_timeout(2000)
+    await page.wait_for_timeout(3000)  # página estabilizar
+
     await page.wait_for_selector("text=Entrar", timeout=15000)
+    await page.wait_for_timeout(1500)  # pausa antes de clicar
     await page.click("text=Entrar")
     await page.wait_for_selector("input[placeholder='Código / CPF']", state="visible", timeout=15000)
-    await page.fill("input[placeholder='Código / CPF']", LOGIN)
-    await page.fill("input[type='password']", SENHA)
+    await page.wait_for_timeout(1000)  # modal abriu, aguarda
+
+    # digita usuário caractere a caractere como humano
+    await page.type("input[placeholder='Código / CPF']", LOGIN, delay=120)
+    await page.wait_for_timeout(700)
+    await page.type("input[type='password']", SENHA, delay=100)
+    await page.wait_for_timeout(1500)  # pausa antes do reCAPTCHA
 
     # ── Tenta resolver reCAPTCHA automaticamente ──
     print("🤖 Tentando resolver reCAPTCHA automaticamente...")
@@ -89,14 +96,13 @@ async def fazer_login(page):
     if not resolved:
         print("⚠️  reCAPTCHA precisa de interação humana.")
         print("   → Por favor, marque 'Não sou um robô' e clique em Entrar no browser.")
-        # Aguarda o modal de login fechar (indica login bem-sucedido)
         await page.wait_for_selector("input[placeholder='Código / CPF']", state="hidden", timeout=120000)
         print("✅ Login detectado após reCAPTCHA manual.")
         return
 
     # Clica em Entrar (apenas se reCAPTCHA foi resolvido automaticamente)
-    # Aguarda o botão ficar habilitado após o reCAPTCHA
     await page.wait_for_selector("#login_submit:not([disabled])", timeout=15000)
+    await page.wait_for_timeout(1000)  # pausa natural antes de submeter
     await page.click("#login_submit")
     await page.wait_for_selector("input[placeholder='Código / CPF']", state="hidden", timeout=15000)
     print("✅ Login realizado com sucesso!")
@@ -108,22 +114,22 @@ async def tentar_recaptcha(page) -> bool:
     Em browser real (não headless) geralmente passa automaticamente.
     """
     try:
-        # Aguarda o iframe do reCAPTCHA carregar
-        await page.wait_for_selector("iframe[src*='recaptcha']", timeout=5000)
+        await page.wait_for_selector("iframe[src*='recaptcha']", timeout=8000)
+        await page.wait_for_timeout(2000)  # iframe do reCAPTCHA carregar completamente
+
         recaptcha_frame = page.frame_locator("iframe[src*='recaptcha']").first
+        await page.wait_for_timeout(1000)  # pausa antes de mover para o checkbox
 
-        # Clica no checkbox
-        await recaptcha_frame.locator("#recaptcha-anchor").click(timeout=5000)
-        await page.wait_for_timeout(3000)
+        await recaptcha_frame.locator("#recaptcha-anchor").click(timeout=8000)
+        await page.wait_for_timeout(4000)  # aguarda avaliação do Google
 
-        # Verifica se passou (checkmark verde = aria-checked="true")
         checked = await recaptcha_frame.locator("#recaptcha-anchor").get_attribute("aria-checked")
         if checked == "true":
             print("✅ reCAPTCHA resolvido automaticamente!")
             return True
 
-        # Se surgiu desafio de imagens, aguarda um pouco mais
-        await page.wait_for_timeout(4000)
+        # Se surgiu desafio de imagens, aguarda resolução
+        await page.wait_for_timeout(6000)
         checked = await recaptcha_frame.locator("#recaptcha-anchor").get_attribute("aria-checked")
         return checked == "true"
 
@@ -135,18 +141,20 @@ async def tentar_recaptcha(page) -> bool:
 async def navegar_pis_cofins(page) -> str:
     """Navega até PIS/COFINS → Busca do Produto e retorna o src do iframe interno."""
     print("📂 Navegando para Federal → PIS/COFINS...")
+    await page.wait_for_timeout(2000)  # pausa antes de interagir com o menu
     await page.hover("text=Federal")
-    await page.wait_for_timeout(800)
+    await page.wait_for_timeout(1500)  # menu dropdown expandir
 
     pis_link = page.locator("text=PIS / COFINS").first
     await pis_link.scroll_into_view_if_needed()
+    await page.wait_for_timeout(800)
     await pis_link.click()
-    await page.wait_for_timeout(2000)
+    await page.wait_for_timeout(3000)  # conteúdo do iframe carregar
 
     # Clica em "Busca do Produto" dentro do iframe #alvo
     busca_tab = page.frame_locator("#alvo").locator("text=Busca do Produto").first
     await busca_tab.click()
-    await page.wait_for_timeout(1500)
+    await page.wait_for_timeout(2500)  # formulário de busca carregar
 
     # Captura o src do iframe aninhado (será usado para recarregar entre buscas)
     busca_src = await page.evaluate("""() => {
@@ -179,16 +187,21 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
         const f2 = f1.contentDocument.querySelector('iframe');
         if (f2) f2.src = '{busca_src}';
     }}""")
-    await page.wait_for_timeout(2000)
+    await page.wait_for_timeout(3000)  # formulário recarregar
 
-    # 1. Preenche campo NCM e submete
+    # 1. Preenche campo NCM caractere a caractere e submete
     await _js_iframe(page, f"""
         const inp = f2.contentDocument.getElementById('inpCodigoNcm');
+        inp.focus();
         inp.value = '{ncm_formatado}';
+        return 'ok';
+    """)
+    await page.wait_for_timeout(1200)  # pausa após digitar
+    await _js_iframe(page, """
         f2.contentDocument.querySelector('input[value="Pesquisar"]').click();
         return 'ok';
     """)
-    await page.wait_for_timeout(2500)
+    await page.wait_for_timeout(3500)  # resultados da pesquisa carregar
 
     # 2. Clica no radio do NCM mais específico sem "Ex "
     prefix = ncm_formatado[:7]
@@ -208,9 +221,7 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
         }}
         return 'ok';
     """)
-    await page.wait_for_timeout(3000)
-
-    await page.wait_for_timeout(500)
+    await page.wait_for_timeout(4000)  # página de detalhes do NCM carregar
 
     # 3. Extrai dados via JS — apenas linhas VISÍVEIS (ignora abas escondidas como ZFM/Exportação)
     raw = await _js_iframe(page, """
