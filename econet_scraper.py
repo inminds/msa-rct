@@ -81,31 +81,6 @@ def ler_ncms(apenas_incompletos: bool = True) -> list[tuple[int, int]]:
     return entradas
 
 
-def ler_dados_existentes() -> dict[int, dict]:
-    """Lê os dados atuais do Excel para cada linha com NCM preenchido.
-
-    Retorna {linha: {campo: valor}} para comparação posterior.
-    """
-    campos = ["descricao", "pis_cum", "cofins_cum", "pis_ncum", "cofins_ncum", "regime", "legislacao"]
-    wb, tmp = _abrir_workbook(read_only=True)
-    try:
-        ws = wb.active
-        dados = {}
-        for r in ws.iter_rows(min_row=2, values_only=False):
-            if not r[0].value:
-                continue
-            # colunas C(2) a I(8) → índices 2-8
-            vals = [r[i].value if i < len(r) else None for i in range(2, 9)]
-            dados[r[0].row] = dict(zip(campos, vals))
-    finally:
-        wb.close()
-        if tmp and tmp.exists():
-            try:
-                tmp.unlink()
-            except Exception:
-                pass
-    return dados
-
 
 async def fazer_login(page):
     print("🔐 Abrindo tela de login...")
@@ -387,7 +362,12 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
 
 
 def _registrar_historico(ws_hist, ncm_fmt: str, dados_ant: dict, dados_nov: dict):
-    """Compara campos e grava no sheet Histórico as diferenças encontradas."""
+    """Grava no sheet Histórico o registro inicial ou mudanças detectadas.
+
+    - Se dados_ant estiver vazio → Registro Inicial (todos os campos novos)
+    - Se dados_ant tiver valores → Atualização (apenas campos alterados)
+    Retorna o número de linhas inseridas.
+    """
     from datetime import datetime
     agora = datetime.now().strftime("%Y-%m-%d %H:%M")
     nomes = {
@@ -399,29 +379,48 @@ def _registrar_historico(ws_hist, ncm_fmt: str, dados_ant: dict, dados_nov: dict
         "regime":      "Regime",
         "legislacao":  "Legislação",
     }
-    mudancas = 0
+
+    # NCM é novo se todos os campos anteriores relevantes estão vazios
+    is_novo = not any(str(dados_ant.get(c) or "").strip()
+                      for c in ["pis_cum", "cofins_cum", "regime"])
+
+    linhas = 0
     for campo, nome in nomes.items():
         ant = str(dados_ant.get(campo) or "").strip()
         nov = str(dados_nov.get(campo) or "").strip()
-        if ant != nov:
-            ws_hist.append([agora, ncm_fmt, nome, ant, nov])
-            mudancas += 1
-    return mudancas
+
+        if is_novo:
+            # Registro Inicial: salva todos os campos com valor
+            if nov:
+                ws_hist.append([agora, ncm_fmt, "Registro Inicial", nome, "—", nov])
+                linhas += 1
+        else:
+            # Atualização: salva apenas campos que mudaram
+            if ant != nov:
+                ws_hist.append([agora, ncm_fmt, "Atualização", nome, ant, nov])
+                linhas += 1
+    return linhas
 
 
-def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict],
-                 dados_anteriores: dict[int, dict] | None = None):
+def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict]):
     destino = XLSX_PATH
     try:
         wb = openpyxl.load_workbook(XLSX_PATH)
         ws = wb.active
     except PermissionError:
-        # Arquivo bloqueado pelo Excel — cria workbook novo
         destino = XLSX_PATH.parent / "bcoDados_resultado.xlsx"
         print(f"⚠️  Excel aberto — salvando em {destino.name}")
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Plan1"
+
+    # Lê estado atual ANTES de escrever — base para comparação histórica
+    campos = ["descricao", "pis_cum", "cofins_cum", "pis_ncum", "cofins_ncum", "regime", "legislacao"]
+    snapshot = {}
+    for r in ws.iter_rows(min_row=2):
+        if r[0].value:
+            vals = [r[i].value if i < len(r) else None for i in range(2, 9)]
+            snapshot[r[0].row] = dict(zip(campos, vals))
 
     headers = [
         "NCM", "NCM Econet", "Descrição",
@@ -431,37 +430,45 @@ def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict],
     ]
     hfill = PatternFill("solid", fgColor="1F4E79")
     hfont = Font(bold=True, color="FFFFFF")
-
     for ci, h in enumerate(headers, 1):
         c = ws.cell(row=1, column=ci, value=h)
         c.fill = hfill
         c.font = hfont
         c.alignment = Alignment(horizontal="center", wrap_text=True)
 
-    # Sheet de histórico (cria se não existir)
+    # Sheet Histórico — cria ou abre, garantindo schema com coluna Tipo
+    hist_headers = ["Data/Hora", "NCM", "Tipo", "Campo", "Valor Anterior", "Valor Novo"]
     if "Histórico" not in wb.sheetnames:
         ws_hist = wb.create_sheet("Histórico")
-        hist_headers = ["Data/Hora", "NCM", "Campo", "Valor Anterior", "Valor Novo"]
         ws_hist.append(hist_headers)
-        hfill_hist = PatternFill("solid", fgColor="1F4E79")
-        hfont_hist = Font(bold=True, color="FFFFFF")
+        hfill_h = PatternFill("solid", fgColor="1F4E79")
+        hfont_h = Font(bold=True, color="FFFFFF")
         for ci, h in enumerate(hist_headers, 1):
             c = ws_hist.cell(row=1, column=ci, value=h)
-            c.fill = hfill_hist
-            c.font = hfont_hist
+            c.fill = hfill_h
+            c.font = hfont_h
             c.alignment = Alignment(horizontal="center")
-        for w, col in zip([18, 13, 22, 40, 40], ["A","B","C","D","E"]):
+        for w, col in zip([18, 13, 16, 22, 40, 40], ["A","B","C","D","E","F"]):
             ws_hist.column_dimensions[col].width = w
     else:
         ws_hist = wb["Histórico"]
+        # Migra header antigo (5 colunas) para novo (6 colunas com Tipo)
+        if ws_hist.cell(1, 3).value != "Tipo":
+            ws_hist.insert_cols(3)
+            ws_hist.cell(1, 3, "Tipo")
+            hfill_h = PatternFill("solid", fgColor="1F4E79")
+            hfont_h = Font(bold=True, color="FFFFFF")
+            for ci in range(1, 7):
+                ws_hist.cell(1, ci).fill = hfill_h
+                ws_hist.cell(1, ci).font = hfont_h
+                ws_hist.cell(1, ci).alignment = Alignment(horizontal="center")
+            for w, col in zip([18, 13, 16, 22, 40, 40], ["A","B","C","D","E","F"]):
+                ws_hist.column_dimensions[col].width = w
 
-    total_mudancas = 0
+    total_linhas_hist = 0
     for (ri, ncm), r in zip(entradas, resultados):
-        # Registra histórico se modo --todos e dados anteriores disponíveis
-        if dados_anteriores and ri in dados_anteriores:
-            total_mudancas += _registrar_historico(
-                ws_hist, formatar_ncm(ncm), dados_anteriores[ri], r
-            )
+        dados_ant = snapshot.get(ri, {})
+        total_linhas_hist += _registrar_historico(ws_hist, formatar_ncm(ncm), dados_ant, r)
 
         ws.cell(ri, 1, ncm)
         ws.cell(ri, 2, formatar_ncm(ncm))
@@ -482,11 +489,10 @@ def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict],
 
     wb.save(destino)
     print(f"\n💾 Salvo: {destino}")
-    if dados_anteriores is not None:
-        if total_mudancas:
-            print(f"📝 {total_mudancas} mudança(s) registrada(s) no sheet Histórico.")
-        else:
-            print("✅ Nenhuma mudança detectada em relação aos dados anteriores.")
+    if total_linhas_hist:
+        print(f"📝 {total_linhas_hist} linha(s) adicionada(s) ao Histórico.")
+    else:
+        print("✅ Nenhuma mudança detectada — Histórico não alterado.")
 
 
 async def main():
@@ -496,10 +502,8 @@ async def main():
 
     if modo_todos:
         print(f"🔄 Modo --todos: {len(entradas)} NCMs serão verificados (incluindo já preenchidos)")
-        dados_anteriores = ler_dados_existentes()
     else:
         print(f"📋 {len(entradas)} NCMs sem dados encontrados: {[formatar_ncm(n) for n in ncms]}")
-        dados_anteriores = None
 
     sessao_existe = SESSION.exists()
 
@@ -553,7 +557,7 @@ async def main():
 
         await browser.close()
 
-    salvar_excel(entradas, resultados, dados_anteriores)
+    salvar_excel(entradas, resultados)
     print("\n🎉 Concluído! Todos os NCMs processados.")
 
 
