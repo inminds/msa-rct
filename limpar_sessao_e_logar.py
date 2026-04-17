@@ -1,42 +1,40 @@
 """
-Script utilitário: apaga cookies salvos e faz login limpo no Econet.
+Script utilitário: apaga o perfil Chrome salvo e faz login limpo no Econet.
+
+Use quando:
+- Quiser forçar um novo login (sessão expirou ou credenciais mudaram)
+- O scraper estiver com problemas de autenticação
 
 Uso:
     python limpar_sessao_e_logar.py
 """
 
-import json
+import shutil
 import sys
 from pathlib import Path
 
-# Caminho do arquivo de cookies
-SESSION_FILE = Path(__file__).parent / "rpa_ncm_scanner" / "session_cookies.json"
+sys.path.insert(0, str(Path(__file__).parent))
+
+from rpa_ncm_scanner.config import CHROME_USER_DATA_DIR, ECONET_USERNAME, ECONET_PASSWORD
+from rpa_ncm_scanner.scraper import EconetScraper
 
 
 def main():
-    # 1. Remove cookies antigos
-    if SESSION_FILE.exists():
-        SESSION_FILE.unlink()
-        print(f"✅ Cookies antigos removidos: {SESSION_FILE}")
+    # 1. Remove perfil Chrome salvo (força novo login)
+    if CHROME_USER_DATA_DIR.exists():
+        shutil.rmtree(CHROME_USER_DATA_DIR)
+        print(f"✅ Perfil Chrome removido: {CHROME_USER_DATA_DIR}")
     else:
-        print(f"ℹ️  Nenhum arquivo de cookies encontrado em {SESSION_FILE}")
-
-    # 2. Importa config para pegar as credenciais
-    sys.path.insert(0, str(Path(__file__).parent))
-    from rpa_ncm_scanner.config import ECONET_USERNAME, ECONET_PASSWORD
-    from rpa_ncm_scanner.scraper import EconetScraper
-    from rpa_ncm_scanner.session_manager import save_cookies
+        print(f"ℹ️  Nenhum perfil encontrado em {CHROME_USER_DATA_DIR}")
 
     print(f"🔑 Fazendo login com usuário: {ECONET_USERNAME}")
-    print("🌐 Abrindo browser (modo visível para reCAPTCHA)...")
+    print("🌐 Abrindo Chrome (modo visível para reCAPTCHA)...")
 
     scraper = EconetScraper(headless=False)
     try:
-        # Força login completo (sem tentar carregar cookies — já deletamos)
-        scraper._start_browser()
-        scraper._do_login(ECONET_USERNAME, ECONET_PASSWORD)
-        save_cookies(scraper._context)
-        print("✅ Login concluído! Cookies salvos. Pode rodar o scan agora:")
+        scraper.login(ECONET_USERNAME, ECONET_PASSWORD)
+        print("✅ Login concluído! Sessão salva no perfil Chrome.")
+        print("   Próximas execuções não precisarão de login:")
         print("   python -m rpa_ncm_scanner scan")
     except Exception as e:
         print(f"❌ Erro durante login: {e}")

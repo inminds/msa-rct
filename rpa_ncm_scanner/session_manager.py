@@ -5,6 +5,10 @@ from playwright.sync_api import BrowserContext, Page
 
 from .config import SESSION_FILE, ECONET_URL
 
+# NOTA: com launch_persistent_context (Chrome real), este módulo não é mais
+# necessário para persistência de sessão — o Chrome salva tudo automaticamente
+# no perfil. Mantido apenas para compatibilidade com código legado.
+
 logger = logging.getLogger(__name__)
 
 

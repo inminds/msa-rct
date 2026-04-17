@@ -4,15 +4,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page, Playwright
+from playwright.sync_api import sync_playwright, BrowserContext, Page, Playwright
 
 from .config import (
     ECONET_URL,
     HEADLESS,
-    SESSION_FILE,
     SCREENSHOTS_DIR,
+    CHROME_USER_DATA_DIR,
 )
-from .session_manager import load_cookies, save_cookies, is_session_valid
 
 logger = logging.getLogger(__name__)
 
@@ -31,27 +30,25 @@ class EconetScraper:
     """
     Scraper Playwright para o portal Econet (econeteditora.com.br).
 
-    Responsabilidades:
-    - Gerenciar login com persistência de sessão (evita reCAPTCHA desnecessário)
-    - Navegar para Federal > PIS/COFINS > Busca do Produto
-    - Pesquisar NCMs e extrair HTML da aba Regra Geral
+    Usa o Chrome real instalado na máquina com perfil persistente:
+    - Sessão salva automaticamente entre execuções (sem arquivo de cookies)
+    - reCAPTCHA muito menos frequente pois o Chrome tem histórico real
+    - Na primeira execução faz login completo; nas seguintes reutiliza a sessão
+
+    Perfil salvo em: rpa_ncm_scanner/chrome_profile/
+    (configurável via env CHROME_USER_DATA_DIR)
     """
 
-    def __init__(
-        self,
-        headless: bool = HEADLESS,
-        session_file: Path = SESSION_FILE,
-    ) -> None:
+    def __init__(self, headless: bool = HEADLESS) -> None:
         self._headless = headless
-        self._session_file = session_file
         SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+        CHROME_USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
         self._playwright: Optional[Playwright] = None
-        self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
 
-        # Credenciais guardadas após login para uso no login inline durante navegação
+        # Credenciais guardadas para uso no login inline durante navegação
         self._username: str = ""
         self._password: str = ""
 
@@ -60,33 +57,32 @@ class EconetScraper:
     # ------------------------------------------------------------------
 
     def _start_browser(self) -> None:
-        """Inicia o Playwright e abre um contexto de browser."""
+        """
+        Inicia o Chrome real com perfil persistente via launch_persistent_context.
+
+        launch_persistent_context salva cookies, localStorage e sessões
+        automaticamente no diretório do perfil — sem precisar de arquivo JSON.
+        """
         self._playwright = sync_playwright().start()
-        self._browser = self._playwright.chromium.launch(
+        self._context = self._playwright.chromium.launch_persistent_context(
+            user_data_dir=str(CHROME_USER_DATA_DIR),
+            channel="chrome",          # Chrome real instalado na máquina
             headless=self._headless,
+            viewport={"width": 1280, "height": 900},
             args=["--disable-blink-features=AutomationControlled"],
         )
-        self._context = self._browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-        )
-        self._page = self._context.new_page()
-        logger.debug("Browser iniciado")
+        # Reutiliza página existente ou abre nova
+        if self._context.pages:
+            self._page = self._context.pages[0]
+        else:
+            self._page = self._context.new_page()
+        logger.debug(f"Chrome iniciado com perfil em: {CHROME_USER_DATA_DIR}")
 
     def close(self) -> None:
-        """Fecha o browser e encerra o Playwright."""
+        """Fecha o browser — o perfil é salvo automaticamente pelo Chrome."""
         if self._context:
             try:
                 self._context.close()
-            except Exception:
-                pass
-        if self._browser:
-            try:
-                self._browser.close()
             except Exception:
                 pass
         if self._playwright:
@@ -94,7 +90,7 @@ class EconetScraper:
                 self._playwright.stop()
             except Exception:
                 pass
-        logger.debug("Browser encerrado")
+        logger.debug("Chrome encerrado (sessão salva no perfil)")
 
     # ------------------------------------------------------------------
     # Screenshots de erro
@@ -124,33 +120,36 @@ class EconetScraper:
 
     def login(self, username: str, password: str) -> None:
         """
-        Faz login no Econet com gerenciamento de sessão persistida.
+        Verifica sessão e faz login se necessário.
 
-        Fluxo:
-        1. Tenta carregar cookies salvos
-        2. Verifica se a sessão ainda é válida
-        3. Se inválida: executa o fluxo de login completo (reCAPTCHA manual)
-        4. Salva cookies após login bem-sucedido
+        Com perfil persistente do Chrome, a sessão sobrevive entre execuções
+        automaticamente. Só faz login completo quando:
+        - É a primeira execução (perfil vazio)
+        - A sessão expirou no servidor do Econet
         """
-        if not self._browser:
+        import time
+
+        if not self._context:
             self._start_browser()
 
-        # Guarda credenciais para uso no login inline durante navegação
+        # Guarda credenciais para uso no login inline durante a navegação
         self._username = username
         self._password = password
 
-        # Tenta reutilizar sessão existente
-        session_loaded = load_cookies(self._context)
-        if session_loaded and is_session_valid(self._page):
-            logger.info("Sessão reutilizada com sucesso — login pulado")
+        # Verifica se já está logado navegando para o Econet
+        logger.info("Verificando sessão no Econet...")
+        self._page.goto(ECONET_URL, wait_until="domcontentloaded", timeout=30_000)
+        time.sleep(2)
+
+        # Se o botão "Entrar" está visível → não está logado
+        entrar_visivel = self._page.locator("a:has-text('Entrar')").is_visible()
+        if not entrar_visivel:
+            logger.info("✅ Sessão válida — já está logado (perfil Chrome)")
             return
 
-        logger.info("Iniciando fluxo de login no Econet...")
-        self._username = username
-        self._password = password
+        logger.info("Sessão não encontrada — iniciando login...")
         self._do_login(username, password)
-        save_cookies(self._context)
-        logger.info("Login concluído e sessão salva")
+        logger.info("✅ Login concluído — sessão salva automaticamente no perfil Chrome")
 
     def _fill_credentials_and_submit(self, username: str, password: str, submit_text: str) -> None:
         """
@@ -466,39 +465,51 @@ class EconetScraper:
             self._screenshot_on_error("nav_piscofins_not_found")
             raise RuntimeError("Não encontrou 'PIS / COFINS' no dropdown do menu Federal.")
 
-        time.sleep(1)
+        # O dropdown do Federal fica sobreposto visualmente, mas os links já estão no DOM.
+        # Estratégia: extrair o href do link "Busca do produto" via JS e navegar
+        # diretamente com page.goto() — ignora completamente o dropdown.
 
-        # 3. Verifica se apareceu o formulário de login inline (não está autenticado)
+        # Aguarda os links da página PIS/COFINS estarem no DOM
+        logger.info("Aguardando links da página PIS/COFINS...")
+        try:
+            page.wait_for_function(
+                """() => {
+                    const links = Array.from(document.querySelectorAll('a'));
+                    return links.some(a => a.textContent.toLowerCase().includes('busca do produto')
+                                       || a.textContent.toLowerCase().includes('busca de produto'));
+                }""",
+                timeout=15_000,
+            )
+        except Exception:
+            self._screenshot_on_error("nav_busca_dom_timeout")
+            raise RuntimeError("Links da página PIS/COFINS não carregaram no DOM.")
+
+        # 3. Verifica login inline se necessário
         if username:
             self._handle_inline_login_if_needed(username, password)
 
-        # 4. Clica no link "Busca do produto:" dentro da página PIS/COFINS.
-        # Texto confirmado via screenshot: "Busca do produto:" (minúsculo, com dois-pontos).
-        # É um hyperlink <a> no corpo do texto, não uma aba/tab.
-        logger.info("Procurando link 'Busca do produto'...")
-        busca_clicked = False
-        for sel in [
-            "a:has-text('Busca do produto')",    # texto exato conforme screenshot
-            "a:has-text('Busca do Produto')",    # variação com maiúscula
-            "a:has-text('Busca de produto')",
-            "a:has-text('Busca de Produto')",
-        ]:
-            try:
-                el = page.locator(sel).first
-                el.wait_for(state="visible", timeout=10_000)
-                el.click()
-                logger.info(f"Clicou no link via '{sel}'")
-                busca_clicked = True
-                break
-            except Exception:
-                continue
+        # 4. Extrai o href do link "Busca do produto" e navega diretamente para ele.
+        # Isso contorna completamente o dropdown sobreposto.
+        logger.info("Extraindo URL do link 'Busca do produto'...")
+        href = page.evaluate("""
+            () => {
+                const links = Array.from(document.querySelectorAll('a'));
+                const target = links.find(a => {
+                    const txt = a.textContent.trim().toLowerCase();
+                    return txt.includes('busca do produto') || txt.includes('busca de produto');
+                });
+                return target ? target.href : null;
+            }
+        """)
 
-        if not busca_clicked:
+        if not href:
             self._screenshot_on_error("nav_busca_not_found")
             raise RuntimeError(
-                "Não encontrou o link 'Busca do produto' na página PIS/COFINS. "
-                "Veja screenshot nav_busca_not_found."
+                "Link 'Busca do produto' não encontrado no DOM da página PIS/COFINS."
             )
+
+        logger.info(f"Navegando diretamente para: {href}")
+        page.goto(href, wait_until="domcontentloaded", timeout=30_000)
         time.sleep(1)
 
         # 5. Após clicar em Busca do produto, pode aparecer login inline novamente

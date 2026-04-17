@@ -14,3 +14,12 @@ REQUEST_DELAY = 2.0  # seconds between requests
 # Credenciais Econet (via env vars; fallback para dev)
 ECONET_USERNAME = os.getenv("ECONET_USERNAME", "onu41041")
 ECONET_PASSWORD = os.getenv("ECONET_PASSWORD", "ms6003")
+
+# Perfil persistente do Chrome — sessão salva entre execuções (sem cookies JSON)
+# O diretório é criado automaticamente se não existir.
+CHROME_USER_DATA_DIR = Path(
+    os.getenv(
+        "CHROME_USER_DATA_DIR",
+        str(BASE_DIR / "chrome_profile"),  # pasta local ao projeto
+    )
+)
