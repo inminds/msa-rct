@@ -52,7 +52,8 @@ def ler_ncms() -> list[int]:
         wb = openpyxl.load_workbook(tmp, read_only=True)
     try:
         ws = wb.active
-        ncms = [int(r[0].value) for r in ws.iter_rows(min_row=2) if r[0].value]
+        ncms = [int(str(r[0].value).replace(".", "")) for r in ws.iter_rows(min_row=2)
+                if r[0].value and (len(r) < 2 or not r[1].value)]
     finally:
         wb.close()
         if tmp and tmp.exists():
@@ -65,9 +66,11 @@ def ler_ncms() -> list[int]:
 
 async def fazer_login(page):
     print("🔐 Abrindo tela de login...")
-    await page.goto(ECONET_URL, wait_until="networkidle")
+    await page.goto(ECONET_URL, wait_until="domcontentloaded", timeout=60000)
+    await page.wait_for_timeout(2000)
+    await page.wait_for_selector("text=Entrar", timeout=15000)
     await page.click("text=Entrar")
-    await page.wait_for_selector("input[placeholder='Código / CPF']", timeout=10000)
+    await page.wait_for_selector("input[placeholder='Código / CPF']", state="visible", timeout=15000)
     await page.fill("input[placeholder='Código / CPF']", LOGIN)
     await page.fill("input[type='password']", SENHA)
 
@@ -84,7 +87,9 @@ async def fazer_login(page):
         return
 
     # Clica em Entrar (apenas se reCAPTCHA foi resolvido automaticamente)
-    await page.click("button:has-text('Entrar'), input[type='submit'][value*='Entrar']")
+    # Aguarda o botão ficar habilitado após o reCAPTCHA
+    await page.wait_for_selector("#login_submit:not([disabled])", timeout=15000)
+    await page.click("#login_submit")
     await page.wait_for_selector("input[placeholder='Código / CPF']", state="hidden", timeout=15000)
     print("✅ Login realizado com sucesso!")
 
@@ -387,7 +392,7 @@ async def main():
         # Usa Chromium visível na 1ª execução, headless depois
         browser = await pw.chromium.launch(
             headless=sessao_existe,
-            args=["--disable-blink-features=AutomationControlled"]
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-gpu"]
         )
 
         ctx_args = {"storage_state": str(SESSION)} if sessao_existe else {}
@@ -409,7 +414,7 @@ async def main():
             print(f"💾 Sessão salva em {SESSION} — próximas execuções sem login!")
         else:
             print("✅ Sessão carregada — sem necessidade de login/reCAPTCHA!")
-            await page.goto(ECONET_URL, wait_until="networkidle")
+            await page.goto(ECONET_URL, wait_until="domcontentloaded", timeout=60000)
             # Verifica se sessão ainda é válida
             try:
                 await page.wait_for_selector("text=Minha Biblioteca", timeout=5000)
