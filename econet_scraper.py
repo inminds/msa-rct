@@ -266,6 +266,11 @@ def _extrair_aba_completa(raw: str) -> dict:
         cofins = cells[2] if len(cells) > 2 else ""
         leg    = cells[3] if len(cells) > 3 else ""
 
+        # Alíquota real é curta ("Vide observações"=16, "0,65%"=5) — texto longo é observação
+        if len(pis) > 25:
+            pis = ""
+        if len(cofins) > 25:
+            cofins = ""
         tem_valor = "%" in pis or "Vide" in pis or "%" in cofins or "Vide" in cofins
         if not tem_valor:
             continue
