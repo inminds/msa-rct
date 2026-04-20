@@ -241,12 +241,14 @@ def _parse_observacoes(body_text: str) -> str:
     return "\n".join(obs_lines)
 
 
-def _extrair_aba_simples(raw: str) -> tuple[str, str, str]:
-    """Extrai (pis, cofins, legislacao) do raw tabular de uma aba (Suspensão/ZFM/etc.)."""
-    pis = cofins = legislacao = ""
+def _extrair_aba_completa(raw: str) -> dict:
+    """Extrai PIS/COFINS separando Cumulativo e Não Cumulativo, ignorando Simples Nacional."""
+    result = {"pis_cum": "", "cofins_cum": "", "pis_ncum": "", "cofins_ncum": "", "leg": ""}
     if not raw or raw.startswith("ERR"):
-        return pis, cofins, legislacao
+        return result
+
     in_aliquota = False
+    legs = []
     for line in raw.splitlines():
         cells = [c.strip() for c in line.split("||")]
         if not any(cells):
@@ -257,20 +259,37 @@ def _extrair_aba_simples(raw: str) -> tuple[str, str, str]:
             continue
         if not in_aliquota:
             continue
-        pct_idx = [i for i, c in enumerate(cells) if "%" in c or "Vide" in c]
-        if not pct_idx:
+        if len(cells) < 2:
             continue
-        if len(pct_idx) >= 2:
-            pis = cells[pct_idx[0]]
-            cofins = cells[pct_idx[1]]
-        else:
-            pis = cofins = cells[pct_idx[0]]
-        non_pct = [cells[i] for i in range(len(cells))
-                   if i not in pct_idx and cells[i] and len(cells[i]) > 5]
-        if non_pct:
-            legislacao = non_pct[-1]
-        break
-    return pis, cofins, legislacao
+        regime = cells[0]
+        pis    = cells[1] if len(cells) > 1 else ""
+        cofins = cells[2] if len(cells) > 2 else ""
+        leg    = cells[3] if len(cells) > 3 else ""
+
+        tem_valor = "%" in pis or "Vide" in pis or "%" in cofins or "Vide" in cofins
+        if not tem_valor:
+            continue
+        if "Simples" in regime:
+            continue  # ignora Simples Nacional
+        if "Cumulativo" in regime and "Não" not in regime:
+            result["pis_cum"]    = pis
+            result["cofins_cum"] = cofins
+            if leg:
+                legs.append(f"Cum: {leg}")
+        elif "Não Cumulativo" in regime:
+            result["pis_ncum"]    = pis
+            result["cofins_ncum"] = cofins
+            if leg:
+                legs.append(f"N.Cum: {leg}")
+        elif regime:
+            # Alíquota única (sem separação de regime)
+            result["pis_cum"] = result["pis_ncum"] = pis
+            result["cofins_cum"] = result["cofins_ncum"] = cofins
+            if leg:
+                legs.append(leg)
+
+    result["leg"] = " | ".join(legs)
+    return result
 
 
 async def _clicar_aba(page, nome_aba: str) -> bool:
@@ -459,9 +478,9 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
             await page.wait_for_timeout(2000)
             raw_aba = await _js_iframe(page, _JS_LINHAS_VISIVEIS)
             body_aba = await _js_iframe(page, "return f2.contentDocument.body.innerText.substring(0,10000);")
-            pis, cofins, leg = _extrair_aba_simples(raw_aba)
-            obs = _parse_observacoes(body_aba) if isinstance(body_aba, str) else ""
-            data["_abas"][aba] = {"pis": pis, "cofins": cofins, "leg": leg, "obs": obs}
+            aba_data = _extrair_aba_completa(raw_aba)
+            aba_data["obs"] = _parse_observacoes(body_aba) if isinstance(body_aba, str) else ""
+            data["_abas"][aba] = aba_data
         else:
             print(f"     Aba '{aba}' não pôde ser clicada")
 
@@ -554,8 +573,9 @@ def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict]):
 
     for aba in abas_vistas:
         sub_headers = [
-            f"{aba} - PIS", f"{aba} - COFINS",
             f"{aba} - Legislação", f"{aba} - Observações",
+            f"{aba} - PIS Cumulativo", f"{aba} - COFINS Cumulativo",
+            f"{aba} - PIS Não Cumulativo", f"{aba} - COFINS Não Cumulativo",
         ]
         for sh in sub_headers:
             if sh not in col_map:
@@ -631,10 +651,12 @@ def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict]):
             "Observações (Regra Geral)": r["obs_rg"],
         }
         for aba, aba_data in r.get("_abas", {}).items():
-            dados_nov[f"{aba} - PIS"]         = aba_data["pis"]
-            dados_nov[f"{aba} - COFINS"]      = aba_data["cofins"]
-            dados_nov[f"{aba} - Legislação"]  = aba_data["leg"]
-            dados_nov[f"{aba} - Observações"] = aba_data["obs"]
+            dados_nov[f"{aba} - PIS Cumulativo"]        = aba_data.get("pis_cum", "")
+            dados_nov[f"{aba} - COFINS Cumulativo"]     = aba_data.get("cofins_cum", "")
+            dados_nov[f"{aba} - PIS Não Cumulativo"]    = aba_data.get("pis_ncum", "")
+            dados_nov[f"{aba} - COFINS Não Cumulativo"] = aba_data.get("cofins_ncum", "")
+            dados_nov[f"{aba} - Legislação"]            = aba_data.get("leg", "")
+            dados_nov[f"{aba} - Observações"]           = aba_data.get("obs", "")
 
         total_linhas_hist += _registrar_historico(ws_hist, formatar_ncm(ncm), dados_ant, dados_nov)
 
