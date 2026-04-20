@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter, RefreshCw, ScanSearch, ScanLine, Loader2, X } from "lucide-react";
+import { Search, Filter, RefreshCw, ScanSearch, ScanLine, Loader2, X, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface NCMRow {
@@ -31,6 +31,7 @@ export default function NCMAnalysis() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [scanDone, setScanDone] = useState(false);
   const [scanLabel, setScanLabel] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -40,21 +41,34 @@ export default function NCMAnalysis() {
     queryKey: ["/api/ncm-excel"],
   });
 
+  async function checkStatus() {
+    try {
+      const res = await fetch("/api/ncm-scan/status");
+      const data = await res.json();
+      refetch();
+      if (!data.running) {
+        stopPolling(true);
+      }
+    } catch {
+      // ignore transient errors
+    }
+  }
+
   function startPolling(label: string) {
     setScanLabel(label);
     setScanning(true);
-    pollRef.current = setInterval(() => refetch(), 10_000);
-    // auto-stop after 10 minutes
-    stopRef.current = setTimeout(() => stopPolling(), 10 * 60 * 1000);
+    setScanDone(false);
+    pollRef.current = setInterval(checkStatus, 8_000);
+    stopRef.current = setTimeout(() => stopPolling(false), 10 * 60 * 1000);
   }
 
-  function stopPolling() {
+  function stopPolling(completed = false) {
     if (pollRef.current) clearInterval(pollRef.current);
     if (stopRef.current) clearTimeout(stopRef.current);
     pollRef.current = null;
     stopRef.current = null;
     setScanning(false);
-    setScanLabel("");
+    if (completed) setScanDone(true);
     refetch();
   }
 
@@ -71,6 +85,7 @@ export default function NCMAnalysis() {
       return res.json();
     },
     onSuccess: (_, mode) => {
+      setScanDone(false);
       const label = mode === "todos" ? "Buscando todos os NCMs no Econet..." : "Buscando NCMs pendentes no Econet...";
       startPolling(label);
     },
@@ -126,8 +141,17 @@ export default function NCMAnalysis() {
         {scanning && (
           <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-blue-800">
             <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-            <span className="text-sm font-medium flex-1">{scanLabel} A tabela atualiza automaticamente a cada 10 segundos.</span>
-            <button onClick={stopPolling} className="text-blue-500 hover:text-blue-700">
+            <span className="text-sm font-medium flex-1">{scanLabel} A tabela atualiza automaticamente.</span>
+            <button onClick={() => stopPolling(false)} className="text-blue-500 hover:text-blue-700">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+        {!scanning && scanDone && (
+          <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-green-800">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span className="text-sm font-medium flex-1">Varredura concluída! Os dados foram atualizados.</span>
+            <button onClick={() => setScanDone(false)} className="text-green-500 hover:text-green-700">
               <X className="w-4 h-4" />
             </button>
           </div>
