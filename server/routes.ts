@@ -726,36 +726,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // POST /api/ncm-scan/trigger — triggers the Python scraper process
+  // POST /api/ncm-scan/trigger — triggers the econet_scraper.py process
+  // mode: "incompletos" (default) | "todos"
   app.post("/api/ncm-scan/trigger", isAuthenticated, async (req: any, res) => {
     try {
-      const { ncm } = req.body as { ncm?: string };
-      const isDev = process.env.NODE_ENV === "development";
-      const scriptDir = path.resolve("rpa_ncm_scanner");
+      const { mode } = req.body as { mode?: "incompletos" | "todos" };
+      const pythonBin = process.platform === "win32" ? "python" : "python3";
+      const args = ["econet_scraper.py", ...(mode === "todos" ? ["--todos"] : [])];
 
-      const args = ncm
-        ? ["-m", "rpa_ncm_scanner", "scan", "--ncm", ncm]
-        : ["-m", "rpa_ncm_scanner", "scan"];
-
-      const pythonBin = isDev ? "python" : "python3";
       const child = spawn(pythonBin, args, {
         cwd: path.resolve("."),
-        env: {
-          ...process.env,
-          NODE_API_URL: `http://127.0.0.1:${process.env.PORT ?? 5000}`,
-          NODE_API_KEY: INTERNAL_API_KEY,
-          PYTHONUNBUFFERED: "1",
-        },
+        env: { ...process.env, PYTHONUNBUFFERED: "1" },
         detached: true,
         stdio: "ignore",
       });
 
-      child.unref(); // Let the process run independently
+      child.unref();
 
-      console.log(`[ncm-scan] Python scraper triggered (pid: ${child.pid}) — ncm: ${ncm ?? "all pending"}`);
+      console.log(`[ncm-scan] econet_scraper triggered (pid: ${child.pid}) — mode: ${mode ?? "incompletos"}`);
       res.json({
         success: true,
-        message: ncm ? `Scan started for NCM ${ncm}` : "Scan started for all pending NCMs",
+        message: mode === "todos" ? "Varredura completa iniciada" : "Varredura de NCMs incompletos iniciada",
         pid: child.pid,
       });
     } catch (error) {
