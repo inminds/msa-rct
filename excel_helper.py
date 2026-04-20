@@ -107,10 +107,10 @@ def cmd_add(ncm_codes: list[str]):
     except PermissionError:
         fallback = "bcoDados_resultado.xlsx"
         wb.save(fallback)
-        print(json.dumps({"added": added, "saved_to": fallback}), ensure_ascii=True)
+        print(json.dumps({"added": added, "saved_to": fallback}, ensure_ascii=True))
         return
 
-    print(json.dumps({"added": added, "saved_to": EXCEL_PATH}), ensure_ascii=True)
+    print(json.dumps({"added": added, "saved_to": EXCEL_PATH}, ensure_ascii=True))
 
 
 if __name__ == "__main__":

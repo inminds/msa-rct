@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter, RefreshCw } from "lucide-react";
+import { Search, Filter, RefreshCw, ScanSearch, ScanLine } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface NCMRow {
   NCM: string;
@@ -29,9 +30,33 @@ function isPreenchido(row: NCMRow): boolean {
 export default function NCMAnalysis() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const { toast } = useToast();
 
   const { data: ncmRows, isLoading, refetch } = useQuery<NCMRow[]>({
     queryKey: ["/api/ncm-excel"],
+  });
+
+  const triggerScan = useMutation({
+    mutationFn: async (mode: "incompletos" | "todos") => {
+      const res = await fetch("/api/ncm-scan/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      if (!res.ok) throw new Error("Falha ao iniciar varredura");
+      return res.json();
+    },
+    onSuccess: (_, mode) => {
+      toast({
+        title: "Varredura iniciada",
+        description: mode === "todos"
+          ? "Buscando todos os NCMs no Econet..."
+          : "Buscando apenas NCMs sem dados...",
+      });
+    },
+    onError: () => {
+      toast({ title: "Erro", description: "Não foi possível iniciar a varredura.", variant: "destructive" });
+    },
   });
 
   const filtered = ncmRows?.filter((row) => {
@@ -114,6 +139,24 @@ export default function NCMAnalysis() {
                 <Button variant="outline" onClick={() => refetch()}>
                   <RefreshCw className="w-4 h-4 mr-2" />
                   Atualizar
+                </Button>
+                <Button
+                  variant="outline"
+                  className="text-amber-700 border-amber-300 hover:bg-amber-50"
+                  disabled={triggerScan.isPending}
+                  onClick={() => triggerScan.mutate("incompletos")}
+                >
+                  <ScanLine className="w-4 h-4 mr-2" />
+                  Buscar Pendentes
+                </Button>
+                <Button
+                  variant="outline"
+                  className="text-blue-700 border-blue-300 hover:bg-blue-50"
+                  disabled={triggerScan.isPending}
+                  onClick={() => triggerScan.mutate("todos")}
+                >
+                  <ScanSearch className="w-4 h-4 mr-2" />
+                  Buscar Todos
                 </Button>
               </div>
             </CardContent>
