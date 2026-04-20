@@ -8,7 +8,7 @@ import multer from "multer";
 import { insertUploadSchema, insertNCMItemSchema, insertTributeSchema } from "@shared/schema";
 import { spawn } from "child_process";
 import path from "path";
-import { readNCMsFromExcel, addNCMsToExcel } from "./services/excelService";
+import { readNCMsFromExcel, addNCMsToExcel, PYTHON } from "./services/excelService";
 
 const INTERNAL_API_KEY = process.env.NODE_API_KEY ?? "dev-internal-key";
 
@@ -732,10 +732,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/ncm-scan/trigger", isAuthenticated, async (req: any, res) => {
     try {
       const { mode } = req.body as { mode?: "incompletos" | "todos" };
-      const pythonBin = process.platform === "win32" ? "python" : "python3";
       const args = ["econet_scraper.py", ...(mode === "todos" ? ["--todos"] : [])];
 
-      const child = spawn(pythonBin, args, {
+      const child = spawn(PYTHON, args, {
         cwd: path.resolve("."),
         env: { ...process.env, PYTHONUNBUFFERED: "1" },
         detached: true,

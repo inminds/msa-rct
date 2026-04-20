@@ -25,7 +25,7 @@ function findPython(): string {
   return process.platform === "win32" ? "python" : "python3";
 }
 
-const PYTHON = findPython();
+export const PYTHON = findPython();
 console.log(`[excelService] Using Python: ${PYTHON}`);
 
 function runHelper(args: string[]): Promise<string> {
