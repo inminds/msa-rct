@@ -397,7 +397,20 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
                     if not data["regime"]: data["regime"] = regime
         if ncm_desc_rows:
             last = ncm_desc_rows[-1]
-            data["descricao"] = " — ".join(c for c in last if c and c not in ("NCM", "DESCRIÇÃO"))
+            specific = last[1] if len(last) > 1 else last[0]
+
+            # Busca a descrição da posição de 4 dígitos (ex: "3926") como base de contexto
+            base = ""
+            for row in ncm_desc_rows:
+                code = str(row[0]).replace(".", "").strip()
+                if code.isdigit() and len(code) == 4 and len(row) > 1:
+                    base = row[1].strip()
+                    break
+
+            if base and base != specific.strip():
+                data["descricao"] = f"{base} — {specific}"
+            else:
+                data["descricao"] = specific
 
     # Detecta regime especial e extrai Observações da Regra Geral
     body_rg = await _js_iframe(page, "return f2.contentDocument.body.innerText.substring(0,10000);")
