@@ -7,59 +7,47 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Edit, Check, Eye, Search, Filter } from "lucide-react";
+import { Search, Filter, RefreshCw } from "lucide-react";
+
+interface NCMRow {
+  NCM: string;
+  "NCM Econet": string;
+  "Descrição": string;
+  "PIS Cumulativo": string;
+  "COFINS Cumulativo": string;
+  "PIS Não Cumulativo": string;
+  "COFINS Não Cumulativo": string;
+  "Regime": string;
+  "Legislação": string;
+  [key: string]: string;
+}
+
+function isPreenchido(row: NCMRow): boolean {
+  return !!(row["PIS Cumulativo"] || row["PIS Não Cumulativo"]);
+}
 
 export default function NCMAnalysis() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
-  const { data: recentAnalyses, isLoading } = useQuery({
-    queryKey: ["/api/analyses/recent"],
+  const { data: ncmRows, isLoading, refetch } = useQuery<NCMRow[]>({
+    queryKey: ["/api/ncm-excel"],
   });
 
-  const getTaxColor = (type: string) => {
-    switch (type) {
-      case "ICMS":
-        return "bg-tax-icms";
-      case "IPI":
-        return "bg-tax-ipi";
-      case "PIS":
-        return "bg-tax-pis";
-      case "COFINS":
-        return "bg-tax-cofins";
-      default:
-        return "bg-gray-500";
-    }
-  };
+  const filtered = ncmRows?.filter((row) => {
+    const matchesSearch =
+      !searchTerm ||
+      row.NCM.includes(searchTerm) ||
+      row["NCM Econet"].includes(searchTerm) ||
+      row["Descrição"].toLowerCase().includes(searchTerm.toLowerCase());
 
-  const getJurisdictionBadge = (tributes: any[]) => {
-    const hasState = tributes.some(t => t.jurisdiction === "ESTADUAL");
-    const hasFederal = tributes.some(t => t.jurisdiction === "FEDERAL");
-    
-    if (hasState && hasFederal) {
-      return <Badge className="bg-blue-100 text-blue-800">Mista</Badge>;
-    } else if (hasState) {
-      return <Badge className="bg-purple-100 text-purple-800">Estadual</Badge>;
-    } else if (hasFederal) {
-      return <Badge className="bg-green-100 text-green-800">Federal</Badge>;
-    }
-    return <Badge>-</Badge>;
-  };
+    const preenchido = isPreenchido(row);
+    const matchesStatus =
+      !statusFilter ||
+      statusFilter === "all" ||
+      (statusFilter === "preenchido" && preenchido) ||
+      (statusFilter === "pendente" && !preenchido);
 
-  const isValidated = (tributes: any[]) => {
-    return tributes.some(t => t.validated);
-  };
-
-  const filteredAnalyses = (recentAnalyses as any[])?.filter((analysis: any) => {
-    const matchesSearch = !searchTerm || 
-      analysis.ncmCode.includes(searchTerm) ||
-      analysis.productName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      analysis.description?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = !statusFilter || statusFilter === "all" ||
-      (statusFilter === "validated" && isValidated(analysis.tributes)) ||
-      (statusFilter === "pending" && !isValidated(analysis.tributes));
-    
     return matchesSearch && matchesStatus;
   });
 
@@ -83,7 +71,7 @@ export default function NCMAnalysis() {
   return (
     <div className="min-h-screen flex bg-gray-50">
       <Sidebar />
-      
+
       <main className="flex-1 overflow-auto">
         <TopBar
           title="NCMs Extraídos"
@@ -99,7 +87,7 @@ export default function NCMAnalysis() {
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <Input
-                      placeholder="Buscar por NCM, produto ou descrição..."
+                      placeholder="Buscar por NCM ou descrição..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-10"
@@ -114,14 +102,18 @@ export default function NCMAnalysis() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Todos</SelectItem>
-                      <SelectItem value="validated">Validados</SelectItem>
-                      <SelectItem value="pending">Pendentes</SelectItem>
+                      <SelectItem value="preenchido">Preenchidos</SelectItem>
+                      <SelectItem value="pendente">Pendentes</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <Button variant="outline" data-testid="button-advanced-filters">
                   <Filter className="w-4 h-4 mr-2" />
                   Filtros Avançados
+                </Button>
+                <Button variant="outline" onClick={() => refetch()}>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Atualizar
                 </Button>
               </div>
             </CardContent>
@@ -131,9 +123,9 @@ export default function NCMAnalysis() {
           <Card>
             <CardHeader>
               <CardTitle>
-                Análises de NCM 
+                Análises de NCM
                 <span className="ml-2 text-sm font-normal text-gray-500">
-                  ({filteredAnalyses?.length || 0} resultados)
+                  ({filtered?.length ?? 0} resultados)
                 </span>
               </CardTitle>
             </CardHeader>
@@ -142,102 +134,80 @@ export default function NCMAnalysis() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         NCM
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Produto
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Descrição
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Tributos Aplicáveis
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        PIS Cum.
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Competência
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        COFINS Cum.
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        PIS N.Cum.
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        COFINS N.Cum.
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Regime
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Ações
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredAnalyses?.map((analysis: any) => (
-                      <tr key={analysis.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="font-mono text-sm font-medium text-gray-900" data-testid={`ncm-code-${analysis.id}`}>
-                            {analysis.ncmCode}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900" data-testid={`product-name-${analysis.id}`}>
-                            {analysis.productName || analysis.description}
-                          </div>
-                          {analysis.description && analysis.productName && (
-                            <div className="text-sm text-gray-500" data-testid={`product-description-${analysis.id}`}>
-                              {analysis.description}
+                    {filtered?.map((row, idx) => {
+                      const preenchido = isPreenchido(row);
+                      return (
+                        <tr key={row.NCM || idx} className="hover:bg-gray-50">
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <div className="font-mono text-sm font-medium text-gray-900">
+                              {row.NCM}
                             </div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-wrap gap-1">
-                            {analysis.tributes?.map((tribute: any) => (
-                              <Badge
-                                key={tribute.id}
-                                className={`${getTaxColor(tribute.type)} bg-opacity-20 text-gray-800`}
-                                data-testid={`tribute-${tribute.type}-${analysis.id}`}
-                              >
-                                {tribute.type} {tribute.rate}%
-                              </Badge>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {getJurisdictionBadge(analysis.tributes || [])}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {isValidated(analysis.tributes || []) ? (
-                            <Badge className="bg-green-100 text-green-800">Validado</Badge>
-                          ) : (
-                            <Badge className="bg-amber-100 text-amber-800">Pendente</Badge>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <div className="flex space-x-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              data-testid={`button-edit-${analysis.id}`}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            {!isValidated(analysis.tributes || []) && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-green-600 hover:text-green-700"
-                                data-testid={`button-validate-${analysis.id}`}
-                              >
-                                <Check className="w-4 h-4" />
-                              </Button>
+                            {row["NCM Econet"] && row["NCM Econet"] !== row.NCM && (
+                              <div className="text-xs text-gray-400">{row["NCM Econet"]}</div>
                             )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              data-testid={`button-view-${analysis.id}`}
-                            >
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-4 py-4 max-w-xs">
+                            <div className="text-sm text-gray-900 truncate" title={row["Descrição"]}>
+                              {row["Descrição"] || <span className="text-gray-400 italic">—</span>}
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700">
+                            {row["PIS Cumulativo"] || <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700">
+                            {row["COFINS Cumulativo"] || <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700">
+                            {row["PIS Não Cumulativo"] || <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700">
+                            {row["COFINS Não Cumulativo"] || <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {row["Regime"] || <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            {preenchido ? (
+                              <Badge className="bg-green-100 text-green-800">Preenchido</Badge>
+                            ) : (
+                              <Badge className="bg-amber-100 text-amber-800">Pendente</Badge>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
-              {!filteredAnalyses || filteredAnalyses.length === 0 ? (
+              {!filtered || filtered.length === 0 ? (
                 <div className="text-center py-12">
                   <h3 className="text-lg font-medium text-gray-900 mb-2">
                     Nenhum resultado encontrado

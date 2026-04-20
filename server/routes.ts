@@ -8,6 +8,7 @@ import multer from "multer";
 import { insertUploadSchema, insertNCMItemSchema, insertTributeSchema } from "@shared/schema";
 import { spawn } from "child_process";
 import path from "path";
+import { readNCMsFromExcel, addNCMsToExcel } from "./services/excelService";
 
 const INTERNAL_API_KEY = process.env.NODE_API_KEY ?? "dev-internal-key";
 
@@ -756,12 +757,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Excel NCM data endpoint
+  app.get("/api/ncm-excel", isAuthenticated, async (_req, res) => {
+    try {
+      const rows = await readNCMsFromExcel();
+      res.json(rows);
+    } catch (error) {
+      console.error("Error reading Excel:", error);
+      res.status(500).json({ message: "Failed to read Excel file" });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   const httpServer = createServer(app);
   return httpServer;
 }
 
-// Async file processing function
+// Async file processing function — writes extracted NCMs to bcoDados.xlsx
 async function processFileAsync(uploadId: string, fileContent: string, fileType: 'SPED' | 'XML' | 'CSV') {
   try {
     console.log(`[processFile] Starting: uploadId=${uploadId}, type=${fileType}, contentLength=${fileContent.length}`);
@@ -772,21 +785,9 @@ async function processFileAsync(uploadId: string, fileContent: string, fileType:
     const processedItems = await FileProcessor.processFile(fileContent, fileType);
     console.log(`[processFile] Parsed ${processedItems.length} NCM items from file`);
 
-    for (const item of processedItems) {
-      const ncmItem = await storage.createNCMItem({ ...item, uploadId });
-      console.log(`[processFile] NCM saved: ${item.ncmCode}`);
-
-      const alreadyHasData = await storage.hasExistingTributeData(item.ncmCode);
-      if (alreadyHasData) {
-        console.log(`[processFile] NCM ${item.ncmCode} already has tribute data, skipping`);
-        continue;
-      }
-
-      const taxes = await TaxCalculator.calculateAllTaxes(item.ncmCode);
-      for (const tax of taxes) {
-        await storage.createTribute({ ...tax, ncmItemId: ncmItem.id });
-      }
-    }
+    const ncmCodes = processedItems.map(item => item.ncmCode);
+    const result = await addNCMsToExcel(ncmCodes);
+    console.log(`[processFile] Excel updated — added: ${result.added.join(", ") || "none (all already present"}`);
 
     await storage.updateUploadStatus(uploadId, 'COMPLETED');
     console.log(`[processFile] Done: uploadId=${uploadId} → COMPLETED`);
