@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter, RefreshCw, ScanSearch, ScanLine } from "lucide-react";
+import { Search, Filter, RefreshCw, ScanSearch, ScanLine, Loader2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface NCMRow {
@@ -30,11 +30,35 @@ function isPreenchido(row: NCMRow): boolean {
 export default function NCMAnalysis() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [scanLabel, setScanLabel] = useState("");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
 
   const { data: ncmRows, isLoading, refetch } = useQuery<NCMRow[]>({
     queryKey: ["/api/ncm-excel"],
   });
+
+  function startPolling(label: string) {
+    setScanLabel(label);
+    setScanning(true);
+    pollRef.current = setInterval(() => refetch(), 10_000);
+    // auto-stop after 10 minutes
+    stopRef.current = setTimeout(() => stopPolling(), 10 * 60 * 1000);
+  }
+
+  function stopPolling() {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (stopRef.current) clearTimeout(stopRef.current);
+    pollRef.current = null;
+    stopRef.current = null;
+    setScanning(false);
+    setScanLabel("");
+    refetch();
+  }
+
+  useEffect(() => () => { stopPolling(); }, []);
 
   const triggerScan = useMutation({
     mutationFn: async (mode: "incompletos" | "todos") => {
@@ -47,12 +71,8 @@ export default function NCMAnalysis() {
       return res.json();
     },
     onSuccess: (_, mode) => {
-      toast({
-        title: "Varredura iniciada",
-        description: mode === "todos"
-          ? "Buscando todos os NCMs no Econet..."
-          : "Buscando apenas NCMs sem dados...",
-      });
+      const label = mode === "todos" ? "Buscando todos os NCMs no Econet..." : "Buscando NCMs pendentes no Econet...";
+      startPolling(label);
     },
     onError: () => {
       toast({ title: "Erro", description: "Não foi possível iniciar a varredura.", variant: "destructive" });
@@ -103,6 +123,16 @@ export default function NCMAnalysis() {
           subtitle="Visualize e gerencie a análise tributária dos códigos NCM identificados"
         />
 
+        {scanning && (
+          <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-blue-800">
+            <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+            <span className="text-sm font-medium flex-1">{scanLabel} A tabela atualiza automaticamente a cada 10 segundos.</span>
+            <button onClick={stopPolling} className="text-blue-500 hover:text-blue-700">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         <div className="p-6 space-y-6">
           {/* Filters */}
           <Card>
@@ -143,19 +173,19 @@ export default function NCMAnalysis() {
                 <Button
                   variant="outline"
                   className="text-amber-700 border-amber-300 hover:bg-amber-50"
-                  disabled={triggerScan.isPending}
+                  disabled={triggerScan.isPending || scanning}
                   onClick={() => triggerScan.mutate("incompletos")}
                 >
-                  <ScanLine className="w-4 h-4 mr-2" />
+                  {scanning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ScanLine className="w-4 h-4 mr-2" />}
                   Buscar Pendentes
                 </Button>
                 <Button
                   variant="outline"
                   className="text-blue-700 border-blue-300 hover:bg-blue-50"
-                  disabled={triggerScan.isPending}
+                  disabled={triggerScan.isPending || scanning}
                   onClick={() => triggerScan.mutate("todos")}
                 >
-                  <ScanSearch className="w-4 h-4 mr-2" />
+                  {scanning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ScanSearch className="w-4 h-4 mr-2" />}
                   Buscar Todos
                 </Button>
               </div>
