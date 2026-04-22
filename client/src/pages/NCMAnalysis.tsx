@@ -74,7 +74,26 @@ export default function NCMAnalysis() {
     refetch();
   }
 
+  // Cleanup on unmount
   useEffect(() => () => { stopPolling(); }, []);
+
+  // Background poll: detect scheduled scans that started without user interaction
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (scanning) return; // already tracking manually
+      try {
+        const res = await fetch("/api/ncm-scan/status");
+        const data = await res.json();
+        if (data.running) {
+          // A scheduled scan is running — start showing the banner
+          startPolling("Varredura automática agendada em andamento...");
+        }
+      } catch {
+        // ignore
+      }
+    }, 20_000);
+    return () => clearInterval(interval);
+  }, [scanning]);
 
   const triggerScan = useMutation({
     mutationFn: async (mode: "incompletos" | "todos") => {

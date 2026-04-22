@@ -5,6 +5,7 @@ import { db } from "../db";
 import { scanSchedule, type ScanSchedule } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { PYTHON } from "./excelService";
+import { setActivePid } from "./scanState";
 
 let activeJob: cron.ScheduledTask | null = null;
 
@@ -29,6 +30,7 @@ function runScraper(mode: string) {
     stdio: "ignore",
   });
   child.unref();
+  if (child.pid) setActivePid(child.pid);
   console.log(`[scheduler] Varredura automática disparada (pid: ${child.pid}, mode: ${mode})`);
 }
 

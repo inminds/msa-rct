@@ -12,6 +12,7 @@ import { spawn } from "child_process";
 import path from "path";
 import { readNCMsFromExcel, addNCMsToExcel, PYTHON } from "./services/excelService";
 import { applySchedule, cancelSchedule } from "./services/schedulerService";
+import { setActivePid, getActivePid } from "./services/scanState";
 
 const INTERNAL_API_KEY = process.env.NODE_API_KEY ?? "dev-internal-key";
 
@@ -732,8 +733,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // POST /api/ncm-scan/trigger — triggers the econet_scraper.py process
   // mode: "incompletos" (default) | "todos"
-  let activeScanPid: number | null = null;
-
   app.post("/api/ncm-scan/trigger", isAuthenticated, async (req: any, res) => {
     try {
       const { mode } = req.body as { mode?: "incompletos" | "todos" };
@@ -747,7 +746,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       child.unref();
-      activeScanPid = child.pid ?? null;
+      if (child.pid) setActivePid(child.pid);
 
       console.log(`[ncm-scan] econet_scraper triggered (pid: ${child.pid}) — mode: ${mode ?? "incompletos"}`);
       res.json({
@@ -763,14 +762,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // GET /api/ncm-scan/status — checks if the scraper process is still running
   app.get("/api/ncm-scan/status", isAuthenticated, (_req, res) => {
-    if (activeScanPid === null) {
+    const pid = getActivePid();
+    if (pid === null) {
       return res.json({ running: false });
     }
     try {
-      process.kill(activeScanPid, 0); // throws if process doesn't exist
-      res.json({ running: true, pid: activeScanPid });
+      process.kill(pid, 0); // throws if process doesn't exist
+      res.json({ running: true, pid });
     } catch {
-      activeScanPid = null;
+      setActivePid(null);
       res.json({ running: false });
     }
   });
