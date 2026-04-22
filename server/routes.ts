@@ -209,7 +209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const { password_hash, ...safeUser } = req.user as any;
         return res.json(safeUser);
       }
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).id ?? (req.user as any).claims?.sub;
       const user = await storage.getUser(userId);
       res.json(user);
     } catch (error) {
@@ -291,7 +291,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // File upload
   app.post('/api/uploads', isAuthenticated, upload.single('file'), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).id ?? (req.user as any).claims?.sub;
       const file = req.file;
 
       if (!file) {
@@ -326,7 +326,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get uploads for user
   app.get('/api/uploads', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).id ?? (req.user as any).claims?.sub;
       const uploads = await storage.getUploadsByUser(userId);
       res.json(uploads);
     } catch (error) {
@@ -374,7 +374,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Validate tribute
   app.put('/api/tributes/:id/validate', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).id ?? (req.user as any).claims?.sub;
       await storage.validateTribute(req.params.id, userId);
       res.json({ message: "Tribute validated successfully" });
     } catch (error) {
@@ -638,7 +638,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/rpa/execute", isAuthenticated, async (req: any, res) => {
     try {
       const { portal_name, force_execution } = req.body;
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).id ?? (req.user as any).claims?.sub;
 
       console.log(`🚀 Manual RPA execution requested by user ${userId} for portal: ${portal_name}`);
 
