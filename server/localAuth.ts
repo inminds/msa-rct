@@ -139,9 +139,16 @@ export function setupLocalAuth(app: Express) {
   });
 }
 
-// ─── Middleware de autenticação (dev) ────────────────────────────────────────
+// ─── Middlewares ─────────────────────────────────────────────────────────────
 
 export const isAuthenticatedLocal: RequestHandler = (req, res, next) => {
   if (req.isAuthenticated()) return next();
   res.status(401).json({ message: "Unauthorized" });
+};
+
+export const isAdmin: RequestHandler = (req, res, next) => {
+  if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+  const user = req.user as any;
+  if (user?.role !== "ADMIN") return res.status(403).json({ message: "Acesso restrito a administradores" });
+  next();
 };

@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { isAuthenticated } from "./replitAuth";
+import { isAdmin } from "./localAuth";
 import { FileProcessor } from "./services/fileProcessor";
 import { TaxCalculator } from "./services/taxCalculator";
 import multer from "multer";
@@ -750,6 +751,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch {
       setActivePid(null);
       res.json({ running: false });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // User management endpoints (admin only)
+  app.get("/api/users", isAdmin, async (_req, res) => {
+    try {
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      const rows = sqliteDb.prepare(
+        "SELECT id, first_name, last_name, email, role, created_at, updated_at FROM users ORDER BY created_at ASC"
+      ).all() as any[];
+      sqliteDb.close();
+      res.json(rows.map(u => ({
+        id: u.id, firstName: u.first_name, lastName: u.last_name,
+        email: u.email, role: u.role, createdAt: u.created_at, updatedAt: u.updated_at,
+      })));
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao listar usuários" });
+    }
+  });
+
+  app.post("/api/users", isAdmin, async (req: any, res) => {
+    try {
+      const { id, firstName, lastName, email, role, password } = req.body;
+      if (!id || !firstName || !password) return res.status(400).json({ message: "id, nome e senha são obrigatórios" });
+      const bcrypt = (await import("bcryptjs")).default;
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      const existing = sqliteDb.prepare("SELECT id FROM users WHERE id = ?").get(id.toLowerCase());
+      if (existing) { sqliteDb.close(); return res.status(409).json({ message: "Usuário já existe" }); }
+      const hash = await bcrypt.hash(password, 10);
+      sqliteDb.prepare(
+        "INSERT INTO users (id, first_name, last_name, email, role, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      ).run(id.toLowerCase(), firstName, lastName ?? "", email ?? "", role ?? "USER", hash);
+      sqliteDb.close();
+      res.status(201).json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao criar usuário" });
+    }
+  });
+
+  app.put("/api/users/:id", isAdmin, async (req: any, res) => {
+    try {
+      const { firstName, lastName, email, role, password } = req.body;
+      const bcrypt = (await import("bcryptjs")).default;
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      if (password) {
+        const hash = await bcrypt.hash(password, 10);
+        sqliteDb.prepare(
+          "UPDATE users SET first_name=?, last_name=?, email=?, role=?, password_hash=?, updated_at=datetime('now') WHERE id=?"
+        ).run(firstName, lastName ?? "", email ?? "", role ?? "USER", hash, req.params.id);
+      } else {
+        sqliteDb.prepare(
+          "UPDATE users SET first_name=?, last_name=?, email=?, role=?, updated_at=datetime('now') WHERE id=?"
+        ).run(firstName, lastName ?? "", email ?? "", role ?? "USER", req.params.id);
+      }
+      sqliteDb.close();
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao atualizar usuário" });
+    }
+  });
+
+  app.delete("/api/users/:id", isAdmin, async (req: any, res) => {
+    try {
+      if (req.params.id === (req.user as any).id) return res.status(400).json({ message: "Você não pode excluir sua própria conta" });
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      sqliteDb.prepare("DELETE FROM users WHERE id = ?").run(req.params.id);
+      sqliteDb.close();
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao excluir usuário" });
     }
   });
 
