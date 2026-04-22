@@ -1032,6 +1032,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  // NCM Changes endpoints (detecção de mudanças pela varredura agendada)
+
+  // GET /api/ncm-changes?status=pending|accepted|rejected|all
+  app.get("/api/ncm-changes", isAuthenticated, async (req, res) => {
+    try {
+      const status = (req.query.status as string) || "pending";
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      const rows = status === "all"
+        ? sqliteDb.prepare("SELECT * FROM ncm_changes ORDER BY scan_date DESC").all() as any[]
+        : sqliteDb.prepare("SELECT * FROM ncm_changes WHERE status = ? ORDER BY scan_date DESC").all(status) as any[];
+      sqliteDb.close();
+      res.json(rows.map(r => ({
+        id: r.id, ncm: r.ncm, field: r.field,
+        oldValue: r.old_value, newValue: r.new_value,
+        status: r.status, scanDate: r.scan_date, resolvedAt: r.resolved_at,
+      })));
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao buscar mudanças" });
+    }
+  });
+
+  // POST /api/ncm-changes/accept-all — aceita todas as pendentes
+  app.post("/api/ncm-changes/accept-all", isAdmin, async (_req, res) => {
+    try {
+      const now = new Date().toISOString();
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      const result = sqliteDb.prepare(
+        "UPDATE ncm_changes SET status='accepted', resolved_at=? WHERE status='pending'"
+      ).run(now);
+      sqliteDb.close();
+      res.json({ success: true, updated: result.changes });
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao aceitar mudanças" });
+    }
+  });
+
+  // POST /api/ncm-changes/:id/accept
+  app.post("/api/ncm-changes/:id/accept", isAdmin, async (req, res) => {
+    try {
+      const now = new Date().toISOString();
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      const row = sqliteDb.prepare("SELECT * FROM ncm_changes WHERE id = ?").get(req.params.id) as any;
+      if (!row) { sqliteDb.close(); return res.status(404).json({ message: "Mudança não encontrada" }); }
+      sqliteDb.prepare("UPDATE ncm_changes SET status='accepted', resolved_at=? WHERE id=?").run(now, req.params.id);
+      sqliteDb.close();
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao aceitar mudança" });
+    }
+  });
+
+  // POST /api/ncm-changes/:id/reject — rejeita e restaura valor antigo no Excel
+  app.post("/api/ncm-changes/:id/reject", isAdmin, async (req, res) => {
+    try {
+      const now = new Date().toISOString();
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      const row = sqliteDb.prepare("SELECT * FROM ncm_changes WHERE id = ?").get(req.params.id) as any;
+      if (!row) { sqliteDb.close(); return res.status(404).json({ message: "Mudança não encontrada" }); }
+
+      // Restore old value in Excel
+      await new Promise<void>((resolve, reject) => {
+        const { execFile } = require("child_process");
+        execFile(PYTHON, ["excel_helper.py", "restore", row.ncm, row.field, row.old_value ?? ""], { cwd: path.resolve(".") },
+          (err: any, stdout: string) => {
+            if (err) { reject(err); } else { resolve(); }
+          }
+        );
+      });
+
+      sqliteDb.prepare("UPDATE ncm_changes SET status='rejected', resolved_at=? WHERE id=?").run(now, req.params.id);
+      sqliteDb.close();
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Erro ao rejeitar mudança:", error);
+      res.status(500).json({ message: "Erro ao restaurar valor no Excel: " + (error?.message ?? error) });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Excel NCM data endpoint
   app.get("/api/ncm-excel", isAuthenticated, async (_req, res) => {
     try {

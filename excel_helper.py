@@ -2,8 +2,9 @@
 excel_helper.py — CLI helper for Node.js to read/write bcoDados.xlsx
 
 Usage:
-  python excel_helper.py read          → JSON array of all rows
-  python excel_helper.py add NCM1 ...  → add NCMs to col A if not present
+  python excel_helper.py read                       → JSON array of all rows
+  python excel_helper.py add NCM1 ...               → add NCMs to col A if not present
+  python excel_helper.py restore NCM CAMPO VALOR    → restore old value for a field
 """
 import sys
 import json
@@ -113,9 +114,63 @@ def cmd_add(ncm_codes: list[str]):
     print(json.dumps({"added": added, "saved_to": EXCEL_PATH}, ensure_ascii=True))
 
 
+def cmd_restore(ncm: str, field: str, value: str):
+    """Restore (overwrite) a single field for a given NCM in the Excel."""
+    # Map field name → column index (1-based)
+    FIELD_COL = {
+        "PIS Cumulativo": 4,        # D
+        "COFINS Cumulativo": 5,     # E
+        "PIS Não Cumulativo": 6,    # F
+        "COFINS Não Cumulativo": 7, # G
+        "Regime": 8,                # H
+    }
+
+    col_idx = FIELD_COL.get(field)
+    if col_idx is None:
+        print(json.dumps({"error": f"Campo desconhecido: {field}"}, ensure_ascii=True))
+        sys.exit(1)
+
+    if not os.path.exists(EXCEL_PATH):
+        print(json.dumps({"error": "Excel não encontrado"}, ensure_ascii=True))
+        sys.exit(1)
+
+    import openpyxl
+    try:
+        wb = openpyxl.load_workbook(EXCEL_PATH)
+    except PermissionError:
+        print(json.dumps({"error": "Excel está aberto — feche e tente novamente"}, ensure_ascii=True))
+        sys.exit(1)
+
+    ws = wb[SHEET_NAME] if SHEET_NAME in wb.sheetnames else wb.active
+
+    # Find the row for this NCM
+    target_row = None
+    for row in ws.iter_rows(min_row=2, max_col=1):
+        cell = row[0]
+        if cell.value and str(cell.value).strip() == ncm.strip():
+            target_row = cell.row
+            break
+
+    if target_row is None:
+        print(json.dumps({"error": f"NCM {ncm} não encontrado no Excel"}, ensure_ascii=True))
+        sys.exit(1)
+
+    ws.cell(row=target_row, column=col_idx, value=value if value else None)
+
+    try:
+        wb.save(EXCEL_PATH)
+    except PermissionError:
+        fallback = "bcoDados_resultado.xlsx"
+        wb.save(fallback)
+        print(json.dumps({"restored": True, "saved_to": fallback}, ensure_ascii=True))
+        return
+
+    print(json.dumps({"restored": True, "ncm": ncm, "field": field, "value": value, "saved_to": EXCEL_PATH}, ensure_ascii=True))
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python excel_helper.py read | add NCM1 NCM2 ...", file=sys.stderr)
+        print("Usage: python excel_helper.py read | add NCM1 NCM2 ... | restore NCM CAMPO VALOR", file=sys.stderr)
         sys.exit(1)
 
     cmd = sys.argv[1].lower()
@@ -123,6 +178,11 @@ if __name__ == "__main__":
         cmd_read()
     elif cmd == "add":
         cmd_add(sys.argv[2:])
+    elif cmd == "restore":
+        if len(sys.argv) < 5:
+            print("Usage: python excel_helper.py restore NCM CAMPO VALOR", file=sys.stderr)
+            sys.exit(1)
+        cmd_restore(sys.argv[2], sys.argv[3], sys.argv[4])
     else:
         print(f"Unknown command: {cmd}", file=sys.stderr)
         sys.exit(1)

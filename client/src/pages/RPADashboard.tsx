@@ -1,435 +1,290 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
-import { 
-  AlertTriangle, 
-  Activity, 
-  CheckCircle, 
-  Clock, 
-  TrendingUp, 
-  ExternalLink,
-  Play,
-  AlertCircle,
-  BarChart3
-} from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { ArrowLeftRight, CheckCheck, XCircle, Clock, CheckCircle2, AlertCircle, GitCompareArrows } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
+interface NCMChange {
+  id: number;
+  ncm: string;
+  field: string;
+  oldValue: string;
+  newValue: string;
+  status: "pending" | "accepted" | "rejected";
+  scanDate: string;
+  resolvedAt: string | null;
+}
+
+function StatusBadge({ status }: { status: NCMChange["status"] }) {
+  if (status === "pending") return <Badge className="bg-yellow-100 text-yellow-800"><Clock className="w-3 h-3 mr-1" />Pendente</Badge>;
+  if (status === "accepted") return <Badge className="bg-green-100 text-green-800"><CheckCircle2 className="w-3 h-3 mr-1" />Aceita</Badge>;
+  return <Badge className="bg-red-100 text-red-800"><XCircle className="w-3 h-3 mr-1" />Rejeitada</Badge>;
+}
 
 export default function RPADashboard() {
-  // Fetch RPA status
-  const { data: rpaStatus, isLoading: statusLoading } = useQuery({
-    queryKey: ['/api/rpa/status'],
-    refetchInterval: 30000, // Refresh every 30 seconds
+  const [statusFilter, setStatusFilter] = useState("pending");
+  const [acceptAllOpen, setAcceptAllOpen] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: currentUser } = useQuery<any>({ queryKey: ["/api/auth/user"] });
+  const isAdmin = currentUser?.role === "ADMIN";
+
+  const { data: changes = [], isLoading } = useQuery<NCMChange[]>({
+    queryKey: ["/api/ncm-changes", statusFilter],
+    queryFn: async () => {
+      const res = await fetch(`/api/ncm-changes?status=${statusFilter}`, { credentials: "include" });
+      return res.json();
+    },
+    refetchInterval: 30_000,
   });
 
-  // Fetch recent changes
-  const { data: recentChanges, isLoading: changesLoading } = useQuery({
-    queryKey: ['/api/rpa/recent-changes'],
-    refetchInterval: 60000, // Refresh every minute
+  // Stats — always fetch all to show counters
+  const { data: allChanges = [] } = useQuery<NCMChange[]>({
+    queryKey: ["/api/ncm-changes", "all"],
+    queryFn: async () => {
+      const res = await fetch("/api/ncm-changes?status=all", { credentials: "include" });
+      return res.json();
+    },
+    refetchInterval: 30_000,
   });
 
-  // Fetch critical changes
-  const { data: criticalChanges, isLoading: criticalLoading } = useQuery({
-    queryKey: ['/api/rpa/critical-changes'],
-    refetchInterval: 30000,
-  });
+  const pending = allChanges.filter(c => c.status === "pending").length;
+  const accepted = allChanges.filter(c => c.status === "accepted").length;
+  const rejected = allChanges.filter(c => c.status === "rejected").length;
 
-  // Fetch statistics
-  const { data: rpaStats, isLoading: statsLoading } = useQuery({
-    queryKey: ['/api/rpa/statistics'],
-    refetchInterval: 300000, // Refresh every 5 minutes
-  });
-
-  const executeRPA = async (portalName?: string) => {
-    try {
-      const response = await fetch('/api/rpa/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ portal_name: portalName })
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        console.log('RPA execution started:', result);
-        // Refresh data after execution
-        setTimeout(() => window.location.reload(), 2000);
-      }
-    } catch (error) {
-      console.error('Error executing RPA:', error);
-    }
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/ncm-changes"] });
   };
 
-  const getStatusBadge = (status?: string) => {
-    switch (status) {
-      case 'active':
-        return <Badge variant="default" className="bg-green-100 text-green-800 border-green-200">
-          <CheckCircle className="w-3 h-3 mr-1" />
-          Ativo
-        </Badge>;
-      case 'running':
-        return <Badge variant="default" className="bg-blue-100 text-blue-800 border-blue-200">
-          <Activity className="w-3 h-3 mr-1 animate-pulse" />
-          Executando
-        </Badge>;
-      case 'error':
-        return <Badge variant="destructive">
-          <AlertTriangle className="w-3 h-3 mr-1" />
-          Erro
-        </Badge>;
-      default:
-        return <Badge variant="secondary">Desconhecido</Badge>;
-    }
-  };
+  const acceptAll = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/ncm-changes/accept-all", { method: "POST", credentials: "include" });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.message); }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      invalidate();
+      setAcceptAllOpen(false);
+      toast({ title: `${data.updated} mudança(s) aceita(s) com sucesso!` });
+    },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
 
-  const getSeverityBadge = (severity?: string) => {
-    switch (severity) {
-      case 'critical':
-        return <Badge variant="destructive" className="bg-red-600">
-          🚨 CRÍTICO
-        </Badge>;
-      case 'high':
-        return <Badge variant="destructive" className="bg-orange-600">
-          ⚠️ ALTO
-        </Badge>;
-      case 'medium':
-        return <Badge variant="secondary" className="bg-yellow-600 text-white">
-          📢 MÉDIO
-        </Badge>;
-      case 'low':
-        return <Badge variant="outline">
-          ℹ️ BAIXO
-        </Badge>;
-      default:
-        return <Badge variant="outline">-</Badge>;
-    }
-  };
+  const acceptOne = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/ncm-changes/${id}/accept`, { method: "POST", credentials: "include" });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.message); }
+      return res.json();
+    },
+    onSuccess: () => { invalidate(); toast({ title: "Mudança aceita." }); },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+
+  const rejectOne = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/ncm-changes/${id}/reject`, { method: "POST", credentials: "include" });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.message); }
+      return res.json();
+    },
+    onSuccess: () => { invalidate(); toast({ title: "Mudança rejeitada. Valor anterior restaurado no Excel." }); },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
 
   return (
     <div className="min-h-screen flex bg-gray-50">
       <Sidebar />
-      
       <main className="flex-1 overflow-auto">
         <TopBar
-          title="RPA Legal Intelligence"
-          subtitle="Monitoramento automático de mudanças em legislações tributárias"
+          title="Mudanças em NCMs"
+          subtitle="Mudanças detectadas pela varredura automática agendada"
         />
 
-        <div className="p-6 space-y-6" data-testid="rpa-dashboard">
-          <div className="flex justify-between items-center">
-            <div className="space-x-2">
-              <Button
-                onClick={() => executeRPA()}
-                disabled={(rpaStatus as any)?.service_status === 'running'}
-                data-testid="button-execute-all"
-              >
-                <Play className="w-4 h-4 mr-2" />
-                Executar RPA
-              </Button>
-            </div>
-          </div>
+        <div className="p-6 space-y-6">
 
-      {/* Critical Alerts */}
-      {(criticalChanges as any)?.critical_changes?.length > 0 && (
-        <Alert className="border-red-200 bg-red-50" data-testid="critical-alert">
-          <AlertTriangle className="h-4 w-4 text-red-600" />
-          <AlertTitle className="text-red-800">
-            Alertas Críticos Pendentes
-          </AlertTitle>
-          <AlertDescription className="text-red-700">
-            {(criticalChanges as any).total_critical} mudanças críticas detectadas que requerem atenção imediata.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Status Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card data-testid="card-system-status">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Status do Sistema</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold mb-1">
-              {statusLoading ? "..." : getStatusBadge((rpaStatus as any)?.service_status || 'unknown')}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {(rpaStatus as any)?.portals_monitored?.length || 0} portais monitorados
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="card-executions-today">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Execuções Hoje</CardTitle>
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {(rpaStatus as any)?.successful_executions_today || 0}/{(rpaStatus as any)?.total_executions_today || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {(rpaStatus as any)?.total_executions_today > 0 
-                ? Math.round(((rpaStatus as any).successful_executions_today / (rpaStatus as any).total_executions_today) * 100)
-                : 0}% sucesso
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="card-changes-detected">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Mudanças Hoje</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {(rpaStatus as any)?.changes_detected_today || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {(criticalChanges as any)?.total_critical || 0} críticas
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="card-next-execution">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Próxima Execução</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-sm">
-              {(rpaStatus as any)?.next_scheduled_execution
-                ? formatDistanceToNow(new Date((rpaStatus as any).next_scheduled_execution), { 
-                    locale: ptBR, 
-                    addSuffix: true 
-                  })
-                : "Não agendado"}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Execução automática
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Main Dashboard Tabs */}
-      <Tabs defaultValue="changes" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="changes" data-testid="tab-changes">Mudanças Recentes</TabsTrigger>
-          <TabsTrigger value="statistics" data-testid="tab-statistics">Estatísticas</TabsTrigger>
-          <TabsTrigger value="portals" data-testid="tab-portals">Portais</TabsTrigger>
-        </TabsList>
-
-        {/* Recent Changes Tab */}
-        <TabsContent value="changes" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Critical Changes */}
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle className="flex items-center text-red-700">
-                  <AlertCircle className="w-4 h-4 mr-2" />
-                  Mudanças Críticas
-                </CardTitle>
-                <CardDescription>
-                  Requerem atenção imediata
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {criticalLoading ? (
-                  <div className="text-sm text-muted-foreground">Carregando...</div>
-                ) : (criticalChanges as any)?.critical_changes?.length > 0 ? (
-                  (criticalChanges as any).critical_changes.map((change: any) => (
-                    <div key={change.id} className="p-3 border border-red-200 rounded-lg bg-red-50" data-testid={`critical-change-${change.id}`}>
-                      <div className="font-medium text-sm text-red-800">
-                        {change.title}
-                      </div>
-                      <div className="text-xs text-red-600 mt-1">
-                        {change.portal_name} • {formatDistanceToNow(new Date(change.detected_at), { locale: ptBR, addSuffix: true })}
-                      </div>
-                      {change.impact_description && (
-                        <div className="text-xs text-red-700 mt-2 italic">
-                          {change.impact_description}
-                        </div>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-sm text-muted-foreground">
-                    🎉 Nenhuma mudança crítica no momento
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* All Recent Changes */}
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Todas as Mudanças</CardTitle>
-                <CardDescription>
-                  Mudanças detectadas recentemente em todos os portais
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {changesLoading ? (
-                  <div className="text-sm text-muted-foreground">Carregando mudanças...</div>
-                ) : (recentChanges as any)?.changes?.length > 0 ? (
-                  (recentChanges as any).changes.map((change: any) => (
-                    <div key={change.id} className="flex items-start justify-between p-3 border rounded-lg hover:bg-gray-50" data-testid={`change-${change.id}`}>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          {getSeverityBadge(change.severity)}
-                          <span className="text-xs text-muted-foreground">
-                            {change.portal_name}
-                          </span>
-                        </div>
-                        <div className="font-medium text-sm mb-1">
-                          {change.title}
-                        </div>
-                        <div className="text-xs text-muted-foreground mb-2">
-                          {change.diff_summary}
-                        </div>
-                        <div className="flex flex-wrap gap-1">
-                          {change.keywords?.map((keyword: string) => (
-                            <Badge key={keyword} variant="outline" className="text-xs px-1 py-0">
-                              {keyword}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end ml-4">
-                        <Button variant="ghost" size="sm" asChild>
-                          <a href={change.url} target="_blank" rel="noopener noreferrer" data-testid={`link-change-${change.id}`}>
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        </Button>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(change.detected_at), { locale: ptBR, addSuffix: true })}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center text-muted-foreground py-8">
-                    Nenhuma mudança recente detectada
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Statistics Tab */}
-        <TabsContent value="statistics" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Cards de resumo */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card>
-              <CardHeader>
-                <CardTitle>Execuções (30 dias)</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {statsLoading ? (
-                  <div className="text-sm text-muted-foreground">Carregando estatísticas...</div>
-                ) : (
-                  <>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">Taxa de Sucesso</span>
-                      <span className="font-bold text-green-600">{(rpaStats as any)?.success_rate || '0%'}</span>
-                    </div>
-                    <Progress value={parseFloat((rpaStats as any)?.success_rate || '0')} className="h-2" />
-                    
-                    <Separator />
-                    
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm">Total de Execuções</span>
-                        <span className="font-medium">{(rpaStats as any)?.total_executions || 0}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm">Sucessos</span>
-                        <span className="font-medium text-green-600">{(rpaStats as any)?.successful_executions || 0}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm">Falhas</span>
-                        <span className="font-medium text-red-600">{(rpaStats as any)?.failed_executions || 0}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm">Tempo Médio</span>
-                        <span className="font-medium">{(rpaStats as any)?.avg_execution_time_minutes || 0} min</span>
-                      </div>
-                    </div>
-                  </>
-                )}
+              <CardContent className="p-6 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Pendentes</p>
+                  <p className="text-3xl font-bold text-yellow-600">{pending}</p>
+                </div>
+                <Clock className="w-8 h-8 text-yellow-400" />
               </CardContent>
             </Card>
-
             <Card>
-              <CardHeader>
-                <CardTitle>Mudanças por Severidade</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {statsLoading ? (
-                  <div className="text-sm text-muted-foreground">Carregando...</div>
-                ) : (
-                  <div className="space-y-3">
-                    {Object.entries((rpaStats as any)?.changes_by_severity || {}).map(([severity, count]) => (
-                      <div key={severity} className="flex justify-between items-center">
-                        {getSeverityBadge(severity)}
-                        <span className="font-bold">{count as number}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <CardContent className="p-6 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Aceitas</p>
+                  <p className="text-3xl font-bold text-green-600">{accepted}</p>
+                </div>
+                <CheckCircle2 className="w-8 h-8 text-green-400" />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-6 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Rejeitadas</p>
+                  <p className="text-3xl font-bold text-red-600">{rejected}</p>
+                </div>
+                <XCircle className="w-8 h-8 text-red-400" />
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
 
-        {/* Portals Tab */}
-        <TabsContent value="portals" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {(rpaStatus as any)?.portals_monitored?.map((portal: string) => (
-              <Card key={portal} data-testid={`portal-card-${portal.toLowerCase().replace(/\s+/g, '-')}`}>
-                <CardHeader>
-                  <CardTitle className="text-lg">{portal}</CardTitle>
-                  <CardDescription>
-                    Portal de legislação tributária
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">Status</span>
-                    {getStatusBadge('active')}
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">Mudanças (30d)</span>
-                    <span className="font-medium">
-                      {(rpaStats as any)?.changes_by_portal?.[portal] || 0}
-                    </span>
-                  </div>
-                  <Separator />
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => executeRPA(portal)}
-                    className="w-full"
-                    data-testid={`button-execute-${portal.toLowerCase().replace(/\s+/g, '-')}`}
+          {/* Barra de ações + filtro */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                <div className="sm:w-56">
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger><SelectValue placeholder="Filtrar por status" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">Pendentes</SelectItem>
+                      <SelectItem value="accepted">Aceitas</SelectItem>
+                      <SelectItem value="rejected">Rejeitadas</SelectItem>
+                      <SelectItem value="all">Todas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {isAdmin && pending > 0 && (
+                  <Button
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                    onClick={() => setAcceptAllOpen(true)}
                   >
-                    <Play className="w-3 h-3 mr-2" />
-                    Executar {portal}
+                    <CheckCheck className="w-4 h-4 mr-2" />
+                    Aceitar Todas ({pending})
                   </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
-      </Tabs>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Tabela de mudanças */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <GitCompareArrows className="w-5 h-5 text-gray-500" />
+                Mudanças Detectadas
+                <span className="ml-1 text-sm font-normal text-gray-500">({changes.length} resultado{changes.length !== 1 ? "s" : ""})</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="text-center py-12 text-gray-500">Carregando...</div>
+              ) : changes.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-400">
+                  <ArrowLeftRight className="w-12 h-12 text-gray-200" />
+                  <p className="text-base font-medium text-gray-500">Nenhuma mudança encontrada</p>
+                  <p className="text-sm">As mudanças aparecem aqui após a varredura automática agendada ser executada.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">NCM</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Campo</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Valor Anterior</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Valor Novo</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Detectado em</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        {isAdmin && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-100">
+                      {changes.map((change) => (
+                        <tr
+                          key={change.id}
+                          className={
+                            change.status === "pending" ? "bg-yellow-50 hover:bg-yellow-100" :
+                            change.status === "accepted" ? "bg-green-50 hover:bg-green-100" :
+                            "bg-red-50 hover:bg-red-100"
+                          }
+                        >
+                          <td className="px-4 py-3 font-mono text-sm font-medium text-gray-900 whitespace-nowrap">{change.ncm}</td>
+                          <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{change.field}</td>
+                          <td className="px-4 py-3 text-sm whitespace-nowrap">
+                            <span className="line-through text-red-500">{change.oldValue || "—"}</span>
+                          </td>
+                          <td className="px-4 py-3 text-sm whitespace-nowrap">
+                            <span className="font-medium text-green-700">{change.newValue || "—"}</span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                            {new Date(change.scanDate).toLocaleString("pt-BR")}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <StatusBadge status={change.status} />
+                          </td>
+                          {isAdmin && (
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              {change.status === "pending" ? (
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    className="bg-green-600 hover:bg-green-700 text-white h-7 text-xs"
+                                    disabled={acceptOne.isPending || rejectOne.isPending}
+                                    onClick={() => acceptOne.mutate(change.id)}
+                                  >
+                                    <CheckCheck className="w-3 h-3 mr-1" /> Aceitar
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-red-600 border-red-300 hover:bg-red-50 h-7 text-xs"
+                                    disabled={acceptOne.isPending || rejectOne.isPending}
+                                    onClick={() => rejectOne.mutate(change.id)}
+                                  >
+                                    <XCircle className="w-3 h-3 mr-1" /> Rejeitar
+                                  </Button>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-400">
+                                  {change.resolvedAt ? new Date(change.resolvedAt).toLocaleString("pt-BR") : "—"}
+                                </span>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </main>
+
+      {/* Confirmação: Aceitar Todas */}
+      <AlertDialog open={acceptAllOpen} onOpenChange={v => !v && setAcceptAllOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Aceitar todas as mudanças?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você está prestes a aceitar <strong>{pending} mudança{pending !== 1 ? "s" : ""}</strong> de NCMs detectadas pela varredura automática.
+              Os novos valores do Econet serão mantidos no Excel. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-green-600 hover:bg-green-700"
+              onClick={() => acceptAll.mutate()}
+              disabled={acceptAll.isPending}
+            >
+              {acceptAll.isPending ? "Aceitando..." : "Confirmar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
