@@ -9,7 +9,9 @@ import multer from "multer";
 import { insertUploadSchema, insertNCMItemSchema, insertTributeSchema, scanSchedule } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { db } from "./db";
-import { spawn } from "child_process";
+import { spawn, execFile } from "child_process";
+import { promisify } from "util";
+const execFileAsync = promisify(execFile);
 import path from "path";
 import { readNCMsFromExcel, addNCMsToExcel, PYTHON } from "./services/excelService";
 import { applySchedule, cancelSchedule } from "./services/schedulerService";
@@ -1096,14 +1098,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!row) { sqliteDb.close(); return res.status(404).json({ message: "Mudança não encontrada" }); }
 
       // Restore old value in Excel
-      await new Promise<void>((resolve, reject) => {
-        const { execFile } = require("child_process");
-        execFile(PYTHON, ["excel_helper.py", "restore", row.ncm, row.field, row.old_value ?? ""], { cwd: path.resolve(".") },
-          (err: any, stdout: string) => {
-            if (err) { reject(err); } else { resolve(); }
-          }
-        );
-      });
+      await execFileAsync(PYTHON, ["excel_helper.py", "restore", row.ncm, row.field, row.old_value ?? ""], { cwd: path.resolve(".") });
 
       sqliteDb.prepare("UPDATE ncm_changes SET status='rejected', resolved_at=? WHERE id=?").run(now, req.params.id);
       sqliteDb.close();
