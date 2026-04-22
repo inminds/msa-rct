@@ -8,9 +8,6 @@ import { Strategy as LocalStrategy } from "passport-local";
 import MemoryStore from "memorystore";
 import bcrypt from "bcryptjs";
 import type { Express, RequestHandler } from "express";
-import { db } from "./db";
-import { users } from "@shared/schema";
-import { eq } from "drizzle-orm";
 
 const MemStore = MemoryStore(session);
 
@@ -66,13 +63,19 @@ export async function seedUsers() {
 passport.use(
   new LocalStrategy(async (username, password, done) => {
     try {
-      const rows = await db.select().from(users).where(eq(users.id, username.toLowerCase()));
-      if (rows.length === 0) return done(null, false, { message: "Usuário não encontrado" });
-      const user = rows[0] as any;
+      // Usar SQLite direto para buscar password_hash (coluna fora do schema Drizzle)
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      const user = sqliteDb.prepare(
+        "SELECT id, first_name, last_name, email, role, password_hash FROM users WHERE id = ?"
+      ).get(username.toLowerCase()) as any;
+      sqliteDb.close();
+
+      if (!user) return done(null, false, { message: "Usuário não encontrado" });
       if (!user.password_hash) return done(null, false, { message: "Usuário sem senha configurada" });
       const ok = await bcrypt.compare(password, user.password_hash);
       if (!ok) return done(null, false, { message: "Senha incorreta" });
-      return done(null, user);
+      return done(null, { id: user.id, firstName: user.first_name, lastName: user.last_name, email: user.email, role: user.role });
     } catch (err) {
       return done(err);
     }
@@ -82,14 +85,14 @@ passport.use(
 passport.serializeUser((user: any, cb) => cb(null, user.id));
 passport.deserializeUser(async (id: string, cb) => {
   try {
-    const rows = await db.select().from(users).where(eq(users.id, id));
-    if (rows.length === 0) return cb(null, null);
-    // Fetch password_hash separately (column not in Drizzle schema)
     const Database = (await import("better-sqlite3")).default;
     const sqliteDb = new Database(".data/dev.db");
-    const raw = sqliteDb.prepare("SELECT password_hash FROM users WHERE id = ?").get(id) as any;
+    const user = sqliteDb.prepare(
+      "SELECT id, first_name, last_name, email, role FROM users WHERE id = ?"
+    ).get(id) as any;
     sqliteDb.close();
-    cb(null, { ...rows[0], password_hash: raw?.password_hash ?? null });
+    if (!user) return cb(null, null);
+    cb(null, { id: user.id, firstName: user.first_name, lastName: user.last_name, email: user.email, role: user.role });
   } catch (err) {
     cb(err);
   }
