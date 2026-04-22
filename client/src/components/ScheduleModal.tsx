@@ -4,6 +4,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -186,20 +187,37 @@ export function ScheduleModal({ open, onClose }: Props) {
               <div className="space-y-1 mb-4">
                 <Label className="text-sm">Horário</Label>
                 <div className="flex items-center gap-2">
-                  <Select value={String(cfg.hour)} onValueChange={v => set("hour", Number(v))}>
-                    <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {HOURS.map(h => <SelectItem key={h.value} value={h.value}>{h.label}h</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <div className="relative w-24">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={cfg.hour}
+                      onChange={e => {
+                        const v = Math.min(23, Math.max(0, Number(e.target.value)));
+                        set("hour", v);
+                      }}
+                      className="pr-7 text-center"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">h</span>
+                  </div>
                   <span className="text-gray-500 font-medium">:</span>
-                  <Select value={String(cfg.minute)} onValueChange={v => set("minute", Number(v))}>
-                    <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {MINUTES.map(m => <SelectItem key={m.value} value={m.value}>{m.label}min</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <div className="relative w-24">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={cfg.minute}
+                      onChange={e => {
+                        const v = Math.min(59, Math.max(0, Number(e.target.value)));
+                        set("minute", v);
+                      }}
+                      className="pr-9 text-center"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">min</span>
+                  </div>
                 </div>
+                <p className="text-xs text-gray-400">Hora: 0–23 · Minuto: 0–59</p>
               </div>
 
               {/* Modo */}
