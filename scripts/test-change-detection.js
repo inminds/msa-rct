@@ -1,10 +1,13 @@
 /**
- * Script de teste para detecção de mudanças em NCMs.
+ * Script de teste REAL para detecção de mudanças em NCMs.
  *
- * Simula o que o schedulerService faz após uma varredura:
- * lê o Excel como "estado atual" e cria um "estado anterior"
- * artificial com alguns campos alterados, inserindo os registros
- * de mudança em ncm_changes.
+ * Faz o ciclo completo que o schedulerService executa:
+ *  1. Lê o Excel → salva snapshot ("antes")
+ *  2. Altera um campo de um NCM no Excel (simula o scraper mudando o valor)
+ *  3. Relê o Excel → "depois"
+ *  4. Compara antes vs depois → detecta mudanças
+ *  5. Salva em ncm_changes
+ *  6. Restaura o valor original no Excel (limpeza)
  *
  * Uso:
  *   node scripts/test-change-detection.js
@@ -20,7 +23,14 @@ const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
-// Detecta Python (mesmo helper do excelService)
+const COMPARE_FIELDS = [
+  "PIS Cumulativo",
+  "COFINS Cumulativo",
+  "PIS Não Cumulativo",
+  "COFINS Não Cumulativo",
+  "Regime",
+];
+
 async function findPython() {
   const candidates = [
     "python",
@@ -31,10 +41,8 @@ async function findPython() {
     `${process.env.LOCALAPPDATA}\\Programs\\Python\\Python310\\python.exe`,
   ];
   for (const p of candidates) {
-    try {
-      await execFileAsync(p, ["--version"]);
-      return p;
-    } catch { /* try next */ }
+    try { await execFileAsync(p, ["--version"]); return p; }
+    catch { /* try next */ }
   }
   return "python";
 }
@@ -44,56 +52,93 @@ async function readExcel(python) {
   return JSON.parse(stdout);
 }
 
-async function main() {
-  console.log("🔍 Lendo Excel atual...");
-  const python = await findPython();
-  const rows = await readExcel(python);
+async function restoreField(python, ncm, field, value) {
+  await execFileAsync(python, ["excel_helper.py", "restore", ncm, field, value], { cwd: ROOT });
+}
 
-  const filled = rows.filter(r => r["PIS Cumulativo"] || r["PIS Não Cumulativo"]);
+async function main() {
+  const python = await findPython();
+  console.log(`🐍 Python: ${python}\n`);
+
+  // ── Passo 1: snapshot "antes" ─────────────────────────────────────────────
+  console.log("📖 Passo 1: lendo Excel (snapshot ANTES)...");
+  const before = await readExcel(python);
+  const filled = before.filter(r => r["PIS Cumulativo"] || r["PIS Não Cumulativo"]);
+
   if (filled.length === 0) {
-    console.log("❌ Nenhum NCM preenchido encontrado no Excel. Execute uma varredura primeiro.");
+    console.log("❌ Nenhum NCM preenchido encontrado. Execute uma varredura primeiro.");
     process.exit(1);
   }
 
-  // Simular mudanças artificiais: pega os 2 primeiros NCMs preenchidos
-  // e cria "antes" com valores ligeiramente diferentes
-  const targets = filled.slice(0, 2);
-  const FAKE_CHANGES = [
-    { field: "PIS Cumulativo",      fakeOldValue: "9,99%"       },
-    { field: "COFINS Cumulativo",   fakeOldValue: "15,00%"      },
-    { field: "Regime",              fakeOldValue: "Monofásico Teste" },
-  ];
+  // Usa o primeiro NCM preenchido como alvo
+  const target = filled[0];
+  const ncm = target["NCM"];
+  const field = "PIS Cumulativo";
+  const originalValue = target[field];
 
-  const db = new Database(path.join(ROOT, ".data/dev.db"));
-  const stmt = db.prepare(
-    "INSERT INTO ncm_changes (ncm, field, old_value, new_value, status, scan_date) VALUES (?, ?, ?, ?, 'pending', ?)"
-  );
+  if (!originalValue) {
+    console.log(`❌ NCM ${ncm} não tem valor em "${field}". Escolha outro NCM.`);
+    process.exit(1);
+  }
 
+  console.log(`   NCM alvo: ${ncm}`);
+  console.log(`   Campo:    ${field}`);
+  console.log(`   Valor atual (original): "${originalValue}"\n`);
+
+  // ── Passo 2: altera o campo no Excel (simula scraper escrevendo novo valor) ─
+  const fakeNewValue = "TEST_99,99%";
+  console.log(`✏️  Passo 2: alterando "${field}" de "${originalValue}" para "${fakeNewValue}" no Excel...`);
+  await restoreField(python, ncm, field, fakeNewValue);
+  console.log("   Excel atualizado.\n");
+
+  // ── Passo 3: relê o Excel ("depois") ─────────────────────────────────────
+  console.log("📖 Passo 3: relendo Excel (snapshot DEPOIS)...");
+  const after = await readExcel(python);
+  const afterMap = new Map(after.map(r => [r["NCM"], r]));
+
+  // ── Passo 4: comparação antes vs depois ───────────────────────────────────
+  console.log("🔎 Passo 4: comparando antes vs depois...");
+  const changes = [];
   const scanDate = new Date().toISOString();
-  let inserted = 0;
 
-  for (const row of targets) {
-    const ncm = row["NCM"];
-    for (const { field, fakeOldValue } of FAKE_CHANGES) {
-      const realValue = row[field];
-      if (!realValue) continue; // pula campos vazios
-      // Só insere se o valor "fake" for diferente do real
-      if (fakeOldValue !== realValue) {
-        stmt.run(ncm, field, fakeOldValue, realValue, scanDate);
-        console.log(`  ✅ NCM ${ncm} | ${field}: "${fakeOldValue}" → "${realValue}"`);
-        inserted++;
+  for (const oldRow of filled) {
+    const newRow = afterMap.get(oldRow["NCM"]);
+    if (!newRow) continue;
+    for (const f of COMPARE_FIELDS) {
+      const oldVal = (oldRow[f] ?? "").trim();
+      const newVal = (newRow[f] ?? "").trim();
+      if (oldVal !== newVal) {
+        changes.push({ ncm: oldRow["NCM"], field: f, oldValue: oldVal, newValue: newVal });
+        console.log(`   ✅ Mudança: NCM ${oldRow["NCM"]} | ${f}: "${oldVal}" → "${newVal}"`);
       }
     }
   }
 
-  db.close();
-
-  if (inserted === 0) {
-    console.log("⚠️  Nenhuma mudança inserida (valores já eram iguais).");
-  } else {
-    console.log(`\n✅ ${inserted} mudança(s) de teste inserida(s) em ncm_changes.`);
-    console.log("👉 Abra a tela 'Mudanças em NCMs' no sistema para ver os resultados.\n");
+  if (changes.length === 0) {
+    console.log("   ⚠️  Nenhuma mudança detectada na comparação.");
   }
+
+  // ── Passo 5: salva em ncm_changes ─────────────────────────────────────────
+  if (changes.length > 0) {
+    console.log(`\n💾 Passo 5: salvando ${changes.length} mudança(s) em ncm_changes...`);
+    const db = new Database(path.join(ROOT, ".data/dev.db"));
+    const stmt = db.prepare(
+      "INSERT INTO ncm_changes (ncm, field, old_value, new_value, status, scan_date) VALUES (?, ?, ?, ?, 'pending', ?)"
+    );
+    for (const c of changes) stmt.run(c.ncm, c.field, c.oldValue, c.newValue, scanDate);
+    db.close();
+    console.log("   Salvo com sucesso.");
+  }
+
+  // ── Passo 6: restaura o valor original no Excel (limpeza) ─────────────────
+  console.log(`\n🔄 Passo 6: restaurando valor original "${originalValue}" no Excel...`);
+  await restoreField(python, ncm, field, originalValue);
+  console.log("   Excel restaurado.\n");
+
+  console.log("═══════════════════════════════════════════════════════");
+  console.log(`✅ Teste concluído! ${changes.length} mudança(s) inserida(s) em ncm_changes.`);
+  console.log("👉 Abra a tela 'Mudanças em NCMs' no sistema para verificar.");
+  console.log("═══════════════════════════════════════════════════════\n");
 }
 
 main().catch(err => { console.error("Erro:", err); process.exit(1); });
