@@ -12,6 +12,7 @@ import {
   varchar,
   text,
   real,
+  integer,
 } from "drizzle-orm/pg-core";
 
 // Conditional table imports - static to avoid require issues
@@ -96,6 +97,21 @@ export const lawChangeLogs = tableFactory("law_change_logs", {
   newContent: text("new_content"),
   sourceUrl: text("source_url"),
 });
+
+// Scan schedule table (single row, id always = 1)
+export const scanSchedule = tableFactory("scan_schedule", {
+  id: integer("id").primaryKey(),
+  enabled: integer("enabled").notNull().default(0), // 0=false, 1=true
+  frequency: varchar("frequency").notNull().default("weekly"), // 'weekly' | 'monthly'
+  dayOfWeek: integer("day_of_week").default(1), // 0=Sun … 6=Sat (used when weekly)
+  dayOfMonth: integer("day_of_month").default(1), // 1–28 (used when monthly)
+  hour: integer("hour").notNull().default(8),
+  minute: integer("minute").notNull().default(0),
+  mode: varchar("mode").notNull().default("incompletos"), // 'incompletos' | 'todos'
+  updatedAt: timestamp("updated_at"),
+});
+
+export type ScanSchedule = typeof scanSchedule.$inferSelect;
 
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({

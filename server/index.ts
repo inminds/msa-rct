@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { demoAuth } from "./middlewares/demoAuth.js"; // <-- ESM: usar .js no import
+import { initScheduler } from "./services/schedulerService";
 
 const app = express();
 app.use(express.json());
@@ -39,6 +40,7 @@ app.use((req, res, next) => {
   // app.use("/api", demoAuth);
 
   const server = await registerRoutes(app);
+  await initScheduler();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

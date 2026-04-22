@@ -7,8 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter, RefreshCw, ScanSearch, ScanLine, Loader2, X, CheckCircle2 } from "lucide-react";
+import { Search, Filter, RefreshCw, ScanSearch, ScanLine, Loader2, X, CheckCircle2, CalendarClock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ScheduleModal } from "@/components/ScheduleModal";
 
 interface NCMRow {
   NCM: string;
@@ -30,6 +31,7 @@ function isPreenchido(row: NCMRow): boolean {
 export default function NCMAnalysis() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanDone, setScanDone] = useState(false);
   const [scanLabel, setScanLabel] = useState("");
@@ -196,6 +198,14 @@ export default function NCMAnalysis() {
                 </Button>
                 <Button
                   variant="outline"
+                  className="text-purple-700 border-purple-300 hover:bg-purple-50"
+                  onClick={() => setScheduleOpen(true)}
+                >
+                  <CalendarClock className="w-4 h-4 mr-2" />
+                  Agendar Varredura
+                </Button>
+                <Button
+                  variant="outline"
                   className="text-amber-700 border-amber-300 hover:bg-amber-50"
                   disabled={triggerScan.isPending || scanning}
                   onClick={() => triggerScan.mutate("incompletos")}
@@ -318,6 +328,8 @@ export default function NCMAnalysis() {
           </Card>
         </div>
       </main>
+
+      <ScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
     </div>
   );
 }

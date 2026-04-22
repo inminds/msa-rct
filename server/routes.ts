@@ -5,10 +5,13 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { FileProcessor } from "./services/fileProcessor";
 import { TaxCalculator } from "./services/taxCalculator";
 import multer from "multer";
-import { insertUploadSchema, insertNCMItemSchema, insertTributeSchema } from "@shared/schema";
+import { insertUploadSchema, insertNCMItemSchema, insertTributeSchema, scanSchedule } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import { db } from "./db";
 import { spawn } from "child_process";
 import path from "path";
 import { readNCMsFromExcel, addNCMsToExcel, PYTHON } from "./services/excelService";
+import { applySchedule, cancelSchedule } from "./services/schedulerService";
 
 const INTERNAL_API_KEY = process.env.NODE_API_KEY ?? "dev-internal-key";
 
@@ -769,6 +772,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch {
       activeScanPid = null;
       res.json({ running: false });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Schedule endpoints
+  app.get("/api/ncm-scan/schedule", isAuthenticated, async (_req, res) => {
+    try {
+      const rows = await db.select().from(scanSchedule).where(eq(scanSchedule.id, 1));
+      if (rows.length === 0) return res.json(null);
+      const r = rows[0];
+      res.json({
+        enabled: !!r.enabled,
+        frequency: r.frequency,
+        dayOfWeek: r.dayOfWeek,
+        dayOfMonth: r.dayOfMonth,
+        hour: r.hour,
+        minute: r.minute,
+        mode: r.mode,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to read schedule" });
+    }
+  });
+
+  app.post("/api/ncm-scan/schedule", isAuthenticated, async (req: any, res) => {
+    try {
+      const { enabled, frequency, dayOfWeek, dayOfMonth, hour, minute, mode } = req.body;
+      const now = new Date();
+      await db.insert(scanSchedule).values({
+        id: 1, enabled: enabled ? 1 : 0, frequency, dayOfWeek, dayOfMonth, hour, minute, mode, updatedAt: now,
+      }).onConflictDoUpdate({
+        target: scanSchedule.id,
+        set: { enabled: enabled ? 1 : 0, frequency, dayOfWeek, dayOfMonth, hour, minute, mode, updatedAt: now },
+      });
+      const rows = await db.select().from(scanSchedule).where(eq(scanSchedule.id, 1));
+      if (enabled) applySchedule(rows[0]);
+      else cancelSchedule();
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error saving schedule:", error);
+      res.status(500).json({ message: "Failed to save schedule" });
+    }
+  });
+
+  app.delete("/api/ncm-scan/schedule", isAuthenticated, async (_req, res) => {
+    try {
+      await db.insert(scanSchedule).values({
+        id: 1, enabled: 0, frequency: "weekly", dayOfWeek: 1, dayOfMonth: 1, hour: 8, minute: 0, mode: "incompletos", updatedAt: new Date(),
+      }).onConflictDoUpdate({
+        target: scanSchedule.id,
+        set: { enabled: 0, updatedAt: new Date() },
+      });
+      cancelSchedule();
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to cancel schedule" });
     }
   });
 
