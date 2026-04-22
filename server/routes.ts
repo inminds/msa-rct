@@ -886,6 +886,152 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Scan Request endpoints (workflow de aprovação)
+
+  // POST /api/scan-requests — cria pedido (qualquer usuário autenticado)
+  app.post("/api/scan-requests", isAuthenticated, async (req: any, res) => {
+    try {
+      const { mode } = req.body as { mode?: string };
+      if (!mode || !["incompletos", "todos"].includes(mode)) {
+        return res.status(400).json({ message: "mode deve ser 'incompletos' ou 'todos'" });
+      }
+      const userId = (req.user as any).id;
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      const active = sqliteDb.prepare(
+        "SELECT id FROM scan_requests WHERE requested_by = ? AND status IN ('pending_thayssa','pending_yuri')"
+      ).get(userId);
+      if (active) { sqliteDb.close(); return res.status(409).json({ message: "Você já tem uma solicitação ativa." }); }
+      const now = new Date().toISOString();
+      const result = sqliteDb.prepare(
+        "INSERT INTO scan_requests (requested_by, mode, status, created_at, updated_at) VALUES (?, ?, 'pending_thayssa', ?, ?)"
+      ).run(userId, mode, now, now);
+      sqliteDb.close();
+      res.status(201).json({ id: result.lastInsertRowid, status: "pending_thayssa" });
+    } catch (error) {
+      console.error("Error creating scan request:", error);
+      res.status(500).json({ message: "Erro ao criar solicitação" });
+    }
+  });
+
+  // GET /api/scan-requests/mine — pedido mais recente do usuário logado
+  app.get("/api/scan-requests/mine", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      const row = sqliteDb.prepare(
+        "SELECT * FROM scan_requests WHERE requested_by = ? ORDER BY created_at DESC LIMIT 1"
+      ).get(userId) as any;
+      sqliteDb.close();
+      if (!row) return res.json(null);
+      res.json({
+        id: row.id, requestedBy: row.requested_by, mode: row.mode, status: row.status,
+        rejectedBy: row.rejected_by, rejectionNote: row.rejection_note,
+        createdAt: row.created_at, updatedAt: row.updated_at,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao buscar solicitação" });
+    }
+  });
+
+  // GET /api/scan-requests/pending — pedidos pendentes para o admin logado
+  app.get("/api/scan-requests/pending", isAdmin, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).id;
+      let statusFilter: string;
+      if (userId === "thayssa") statusFilter = "pending_thayssa";
+      else if (userId === "yuri") statusFilter = "pending_yuri";
+      else return res.json([]);
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      const rows = sqliteDb.prepare(
+        `SELECT sr.*, u.first_name, u.last_name FROM scan_requests sr
+         LEFT JOIN users u ON sr.requested_by = u.id
+         WHERE sr.status = ? ORDER BY sr.created_at ASC`
+      ).all(statusFilter) as any[];
+      sqliteDb.close();
+      res.json(rows.map(r => ({
+        id: r.id,
+        requestedBy: r.requested_by,
+        requestedByName: `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() || r.requested_by,
+        mode: r.mode,
+        status: r.status,
+        createdAt: r.created_at,
+      })));
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao buscar solicitações pendentes" });
+    }
+  });
+
+  // POST /api/scan-requests/:id/approve — aprovar (thayssa ou yuri dependendo do status)
+  app.post("/api/scan-requests/:id/approve", isAdmin, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const requestId = req.params.id;
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      const row = sqliteDb.prepare("SELECT * FROM scan_requests WHERE id = ?").get(requestId) as any;
+      if (!row) { sqliteDb.close(); return res.status(404).json({ message: "Solicitação não encontrada" }); }
+      const now = new Date().toISOString();
+      if (row.status === "pending_thayssa") {
+        if (userId !== "thayssa") { sqliteDb.close(); return res.status(403).json({ message: "Somente a Thayssa pode aprovar nesta etapa" }); }
+        sqliteDb.prepare("UPDATE scan_requests SET status='pending_yuri', updated_at=? WHERE id=?").run(now, requestId);
+        sqliteDb.close();
+        return res.json({ success: true, newStatus: "pending_yuri" });
+      }
+      if (row.status === "pending_yuri") {
+        if (userId !== "yuri") { sqliteDb.close(); return res.status(403).json({ message: "Somente o Yuri pode aprovar nesta etapa" }); }
+        const activePid = getActivePid();
+        if (activePid !== null) {
+          try { process.kill(activePid, 0); sqliteDb.close(); return res.status(409).json({ message: "Já há uma varredura em andamento. Tente novamente em instantes." }); }
+          catch { setActivePid(null); }
+        }
+        sqliteDb.prepare("UPDATE scan_requests SET status='approved', updated_at=? WHERE id=?").run(now, requestId);
+        sqliteDb.close();
+        const args = ["econet_scraper.py", ...(row.mode === "todos" ? ["--todos"] : [])];
+        const child = spawn(PYTHON, args, {
+          cwd: path.resolve("."), env: { ...process.env, PYTHONUNBUFFERED: "1" }, detached: true, stdio: "ignore",
+        });
+        child.unref();
+        if (child.pid) setActivePid(child.pid);
+        console.log(`[scan-requests] Yuri aprovou — scan iniciado (pid: ${child.pid}) mode: ${row.mode}`);
+        return res.json({ success: true, newStatus: "approved", pid: child.pid });
+      }
+      sqliteDb.close();
+      return res.status(400).json({ message: "Solicitação não está em estado aprovável" });
+    } catch (error) {
+      console.error("Error approving scan request:", error);
+      res.status(500).json({ message: "Erro ao aprovar solicitação" });
+    }
+  });
+
+  // POST /api/scan-requests/:id/reject — rejeitar
+  app.post("/api/scan-requests/:id/reject", isAdmin, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const requestId = req.params.id;
+      const { note } = req.body as { note?: string };
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
+      const row = sqliteDb.prepare("SELECT * FROM scan_requests WHERE id = ?").get(requestId) as any;
+      if (!row) { sqliteDb.close(); return res.status(404).json({ message: "Solicitação não encontrada" }); }
+      if (row.status === "pending_thayssa" && userId !== "thayssa") { sqliteDb.close(); return res.status(403).json({ message: "Somente a Thayssa pode rejeitar nesta etapa" }); }
+      if (row.status === "pending_yuri" && userId !== "yuri") { sqliteDb.close(); return res.status(403).json({ message: "Somente o Yuri pode rejeitar nesta etapa" }); }
+      if (!["pending_thayssa", "pending_yuri"].includes(row.status)) { sqliteDb.close(); return res.status(400).json({ message: "Solicitação não está em estado rejeitável" }); }
+      const now = new Date().toISOString();
+      sqliteDb.prepare(
+        "UPDATE scan_requests SET status='rejected', rejected_by=?, rejection_note=?, updated_at=? WHERE id=?"
+      ).run(userId, note ?? null, now, requestId);
+      sqliteDb.close();
+      res.json({ success: true, newStatus: "rejected" });
+    } catch (error) {
+      console.error("Error rejecting scan request:", error);
+      res.status(500).json({ message: "Erro ao rejeitar solicitação" });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Excel NCM data endpoint
   app.get("/api/ncm-excel", isAuthenticated, async (_req, res) => {
     try {
