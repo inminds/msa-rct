@@ -131,9 +131,10 @@ export async function setupAuth(app: Express) {
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
-  // Development: allow all requests
+  // Development: use local session-based auth
   if (isDev) {
-    return next();
+    if (req.isAuthenticated()) return next();
+    return res.status(401).json({ message: "Unauthorized" });
   }
 
   const user = req.user as any;

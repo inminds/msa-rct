@@ -85,7 +85,10 @@ export function Sidebar() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => window.location.href = "/api/logout"}
+            onClick={async () => {
+              await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+              window.location.href = "/login";
+            }}
             data-testid="button-logout"
           >
             <LogOut className="w-4 h-4" />

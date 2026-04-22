@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { demoAuth } from "./middlewares/demoAuth.js"; // <-- ESM: usar .js no import
 import { initScheduler } from "./services/schedulerService";
+import { setupLocalAuth, seedUsers } from "./localAuth";
 
 const app = express();
 app.use(express.json());
@@ -36,8 +37,11 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Demo auth disabled for demonstration purposes
-  // app.use("/api", demoAuth);
+  const isDev = process.env.NODE_ENV === "development";
+  if (isDev) {
+    setupLocalAuth(app);
+    await seedUsers();
+  }
 
   const server = await registerRoutes(app);
   await initScheduler();

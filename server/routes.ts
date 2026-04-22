@@ -230,6 +230,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
+      // Dev: user is already the full object from passport session
+      if (process.env.NODE_ENV === 'development') {
+        const { password_hash, ...safeUser } = req.user as any;
+        return res.json(safeUser);
+      }
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       res.json(user);

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type ComponentType } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 
 import Dashboard from "@/pages/Dashboard";
 import Landing from "@/pages/Landing";
+import Login from "@/pages/Login";
 import Uploads from "@/pages/Uploads";
 import NCMAnalysis from "@/pages/NCMAnalysis";
 import TaxAnalysis from "@/pages/TaxAnalysis";
@@ -24,26 +25,37 @@ function Redirect({ to }: { to: string }) {
   return null;
 }
 
+function ProtectedRoute({ component: Component }: { component: ComponentType }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!isAuthenticated) return <Redirect to="/login" />;
+  return <Component />;
+}
+
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
 
   return (
     <Switch>
-      {/* Rota pública da landing */}
+      {/* Rota pública */}
       <Route path="/">
-        {/* Enquanto carrega, não renderiza nada para evitar flicker */}
-        {isLoading ? null : isAuthenticated ? <Redirect to="/app" /> : <Landing />}
+        {isLoading ? null : isAuthenticated ? <Redirect to="/app" /> : <Redirect to="/login" />}
+      </Route>
+
+      {/* Login */}
+      <Route path="/login">
+        {isLoading ? null : isAuthenticated ? <Redirect to="/app" /> : <Login />}
       </Route>
 
       {/* Área logada */}
-      <Route path="/app" component={Dashboard} />
-      <Route path="/uploads" component={Uploads} />
-      <Route path="/ncm-analysis" component={NCMAnalysis} />
-      <Route path="/tax-analysis" component={TaxAnalysis} />
-      <Route path="/reports" component={Reports} />
-      <Route path="/users" component={Users} />
-      <Route path="/rpa" component={RPA} />
-      <Route path="/rpa-dashboard" component={RPADashboard} />
+      <Route path="/app"><ProtectedRoute component={Dashboard} /></Route>
+      <Route path="/uploads"><ProtectedRoute component={Uploads} /></Route>
+      <Route path="/ncm-analysis"><ProtectedRoute component={NCMAnalysis} /></Route>
+      <Route path="/tax-analysis"><ProtectedRoute component={TaxAnalysis} /></Route>
+      <Route path="/reports"><ProtectedRoute component={Reports} /></Route>
+      <Route path="/users"><ProtectedRoute component={Users} /></Route>
+      <Route path="/rpa"><ProtectedRoute component={RPA} /></Route>
+      <Route path="/rpa-dashboard"><ProtectedRoute component={RPADashboard} /></Route>
 
       {/* 404 */}
       <Route component={NotFound} />
