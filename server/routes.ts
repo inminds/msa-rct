@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { isAuthenticated } from "./replitAuth";
 import { FileProcessor } from "./services/fileProcessor";
 import { TaxCalculator } from "./services/taxCalculator";
 import multer from "multer";
@@ -199,33 +199,6 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  const isDev = process.env.NODE_ENV === 'development';
-
-  // Auth middleware
-  if (!isDev) {
-    await setupAuth(app);
-  } else {
-    // Development mode: simple mock auth
-    // Ensure dev user exists in the database (foreign key requirement)
-    await storage.upsertUser({
-      id: 'dev-user-123',
-      email: 'dev@local.test',
-      firstName: 'Dev',
-      lastName: 'User',
-      role: 'ADMIN',
-    });
-
-    app.use((req: any, res, next) => {
-      req.user = {
-        claims: {
-          sub: 'dev-user-123',
-          email: 'dev@local.test',
-        },
-      };
-      next();
-    });
-    console.log('📝 Dev mode: Using mock authentication (user: dev@local.test)');
-  }
 
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {

@@ -127,7 +127,12 @@ export function setupLocalAuth(app: Express) {
 
   // POST /api/auth/logout
   app.post("/api/auth/logout", (req, res) => {
-    req.logout(() => res.json({ success: true }));
+    req.logout(() => {
+      req.session.destroy(() => {
+        res.clearCookie("connect.sid");
+        res.json({ success: true });
+      });
+    });
   });
 }
 
