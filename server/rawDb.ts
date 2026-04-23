@@ -41,7 +41,7 @@ function toPg(sql: string): string {
 
 async function pgPool() {
   const { pool } = await import("./db.js");
-  return pool as import("@neondatabase/serverless").Pool;
+  return pool as import("pg").Pool;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

@@ -1,8 +1,7 @@
 import * as schema from "@shared/schema";
 import { createRequire } from "module";
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle as drizzleNeon } from 'drizzle-orm/neon-serverless';
-import ws from "ws";
+import { Pool } from 'pg';
+import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
 import fs from 'fs';
 
 const _require = createRequire(import.meta.url);
@@ -165,7 +164,7 @@ if (isDev) {
   }
 
   pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  db = drizzleNeon({ client: pool, schema });
+  db = drizzlePg({ client: pool, schema });
 
   // Ensure extra tables (not in Drizzle schema) exist in PostgreSQL
   // Fire-and-forget — runs before first request thanks to Node.js event loop
