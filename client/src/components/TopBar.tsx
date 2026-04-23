@@ -32,9 +32,6 @@ export function TopBar({ title, subtitle, onNewUpload }: TopBarProps) {
           )}
           <div className="relative">
             <Bell className="text-gray-400 text-xl" />
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
-              3
-            </span>
           </div>
         </div>
       </div>
