@@ -123,6 +123,7 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="SPED">SPED Fiscal (.txt)</SelectItem>
+                <SelectItem value="TXT_NCM">Lista de NCMs (.txt)</SelectItem>
                 <SelectItem value="XML">XML NFe (.xml)</SelectItem>
                 <SelectItem value="CSV">CSV Produtos (.csv)</SelectItem>
               </SelectContent>
@@ -187,6 +188,12 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
               data-testid="textarea-description"
             />
           </div>
+
+          {fileType === "TXT_NCM" && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              Neste modo, cada linha deve conter apenas um NCM. Exemplo: <strong>8528.52.00</strong> ou <strong>85285200</strong>.
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end space-x-3 pt-4">

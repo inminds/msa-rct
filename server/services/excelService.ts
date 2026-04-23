@@ -146,31 +146,32 @@ export async function addNCMsToExcel(
     return { added: [], saved_to: EXCEL_PATH };
   }
   try {
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.readFile(EXCEL_PATH);
-    const ws = wb.getWorksheet(SHEET_NAME) ?? wb.worksheets[0];
+    const XLSX = _require("xlsx");
+    const wb = XLSX.readFile(EXCEL_PATH, { type: "file", cellText: false, cellDates: true });
+    const sheetName = wb.SheetNames.includes(SHEET_NAME) ? SHEET_NAME : wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
     if (!ws) return { added: [], saved_to: EXCEL_PATH };
 
-    // Coleta NCMs já presentes
+    const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[][];
     const existing = new Set<string>();
-    ws.eachRow((row, rowNum) => {
-      if (rowNum === 1) return;
-      const ncm = cellText(row.getCell(1)).trim();
-      if (ncm) existing.add(ncm);
-    });
+    for (let i = 1; i < rows.length; i++) {
+      const ncm = String(rows[i]?.[0] ?? "").trim();
+      if (ncm) existing.add(ncm.replace(/\D/g, ""));
+    }
 
     const added: string[] = [];
     for (const code of ncmCodes) {
-      const clean = code.replace(/\D/g, ""); // remove pontos e traços
-      if (!existing.has(clean)) {
-        ws.addRow([clean]);
-        existing.add(clean);
-        added.push(clean);
-      }
+      const clean = code.replace(/\D/g, "");
+      if (clean.length !== 8 || existing.has(clean)) continue;
+      rows.push([clean]);
+      existing.add(clean);
+      added.push(clean);
     }
 
     if (added.length > 0) {
-      await wb.xlsx.writeFile(EXCEL_PATH);
+      const newWs = XLSX.utils.aoa_to_sheet(rows);
+      wb.Sheets[sheetName] = newWs;
+      XLSX.writeFile(wb, EXCEL_PATH);
     }
     return { added, saved_to: EXCEL_PATH };
   } catch (err) {

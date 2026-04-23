@@ -8,6 +8,10 @@ export interface ProcessedNCMItem {
   productName?: string;
 }
 
+function normalizeNCM(value: unknown): string {
+  return String(value ?? "").replace(/\D/g, "").slice(0, 8);
+}
+
 export class FileProcessor {
   static async processSPEDFile(fileContent: string): Promise<ProcessedNCMItem[]> {
     const lines = fileContent.split('\n').filter(line => line.trim());
@@ -20,7 +24,7 @@ export class FileProcessor {
         if (fields.length >= 10) {
           const productCode = fields[2];
           const productName = fields[3];
-          const ncmCode = fields[9];
+          const ncmCode = normalizeNCM(fields[9]);
           
           if (ncmCode && ncmCode.length === 8) {
             ncmItems.push({
@@ -51,7 +55,7 @@ export class FileProcessor {
         for (const item of det) {
           const prod = item.prod?.[0];
           if (prod) {
-            const ncmCode = prod.NCM?.[0];
+            const ncmCode = normalizeNCM(prod.NCM?.[0]);
             const productName = prod.xProd?.[0];
             const description = prod.xProd?.[0];
             
@@ -86,12 +90,14 @@ export class FileProcessor {
       for (const record of records) {
         // Try common column names for NCM
         const recordObj = record as Record<string, any>;
-        const ncmCode = recordObj.NCM || recordObj.ncm || recordObj.codigo_ncm || recordObj.ncm_code;
+        const ncmCode = normalizeNCM(
+          recordObj.NCM || recordObj.ncm || recordObj.codigo_ncm || recordObj.ncm_code
+        );
         const productName = recordObj.produto || recordObj.product || recordObj.nome_produto || recordObj.description || recordObj.descricao;
         
         if (ncmCode && ncmCode.length === 8) {
           ncmItems.push({
-            ncmCode: ncmCode.toString(),
+            ncmCode,
             description: productName?.toString(),
             productName: productName?.toString(),
           });
@@ -105,7 +111,25 @@ export class FileProcessor {
     }
   }
 
-  static async processFile(fileContent: string, fileType: 'SPED' | 'XML' | 'CSV'): Promise<ProcessedNCMItem[]> {
+  static async processNCMListFile(fileContent: string): Promise<ProcessedNCMItem[]> {
+    const lines = fileContent.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const ncmItems: ProcessedNCMItem[] = [];
+
+    for (const line of lines) {
+      const ncmCode = normalizeNCM(line);
+      if (ncmCode.length === 8) {
+        ncmItems.push({
+          ncmCode,
+          description: ncmCode,
+          productName: ncmCode,
+        });
+      }
+    }
+
+    return ncmItems;
+  }
+
+  static async processFile(fileContent: string, fileType: 'SPED' | 'XML' | 'CSV' | 'TXT_NCM'): Promise<ProcessedNCMItem[]> {
     switch (fileType) {
       case 'SPED':
         return this.processSPEDFile(fileContent);
@@ -113,6 +137,8 @@ export class FileProcessor {
         return this.processXMLFile(fileContent);
       case 'CSV':
         return this.processCSVFile(fileContent);
+      case 'TXT_NCM':
+        return this.processNCMListFile(fileContent);
       default:
         throw new Error(`Unsupported file type: ${fileType}`);
     }

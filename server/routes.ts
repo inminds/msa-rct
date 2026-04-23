@@ -1301,7 +1301,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 }
 
 // Async file processing function — writes extracted NCMs to bcoDados.xlsx
-async function processFileAsync(uploadId: string, fileContent: string, fileType: 'SPED' | 'XML' | 'CSV') {
+async function processFileAsync(uploadId: string, fileContent: string, fileType: 'SPED' | 'XML' | 'CSV' | 'TXT_NCM') {
   try {
     console.log(`[processFile] Starting: uploadId=${uploadId}, type=${fileType}, contentLength=${fileContent.length}`);
 
@@ -1315,16 +1315,19 @@ async function processFileAsync(uploadId: string, fileContent: string, fileType:
     const result = await addNCMsToExcel(ncmCodes);
     console.log(`[processFile] Excel updated — added: ${result.added.join(", ") || "none (all already present"}`);
 
-    // Save extracted NCMs to ncm_items table so the dashboard count works
-    for (const item of processedItems) {
-      await storage.createNCMItem({
-        ncmCode: item.ncmCode,
-        description: item.description ?? null,
-        productName: item.productName ?? null,
-        uploadId,
-      });
+    // SPED/XML/CSV continuam alimentando a base operacional em ncm_items.
+    // A lista limpa de TXT_NCM é tratada como entrada direta para o Excel.
+    if (fileType !== 'TXT_NCM') {
+      for (const item of processedItems) {
+        await storage.createNCMItem({
+          ncmCode: item.ncmCode,
+          description: item.description ?? null,
+          productName: item.productName ?? null,
+          uploadId,
+        });
+      }
+      console.log(`[processFile] Saved ${processedItems.length} NCM items to database`);
     }
-    console.log(`[processFile] Saved ${processedItems.length} NCM items to database`);
 
     await storage.updateUploadStatus(uploadId, 'COMPLETED');
     console.log(`[processFile] Done: uploadId=${uploadId} → COMPLETED`);
