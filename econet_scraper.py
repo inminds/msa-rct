@@ -156,37 +156,87 @@ async def tentar_recaptcha(page) -> bool:
 async def navegar_pis_cofins(page) -> str:
     """Navega até PIS/COFINS → Busca do Produto e retorna o src do iframe interno."""
     print("📂 Navegando para Federal → PIS/COFINS...")
-    await page.wait_for_timeout(2000)  # pausa antes de interagir com o menu
-    await page.hover("text=Federal")
-    await page.wait_for_timeout(1500)  # menu dropdown expandir
+    await page.wait_for_timeout(2000)
 
-    pis_link = page.locator("text=PIS / COFINS").first
-    await pis_link.scroll_into_view_if_needed()
-    await page.wait_for_timeout(800)
-    await pis_link.click()
-    await page.wait_for_timeout(3000)  # conteúdo do iframe carregar
-
-    # Clica em "Busca do Produto" dentro do iframe #alvo
-    busca_tab = page.frame_locator("#alvo").locator("text=Busca do Produto").first
-    await busca_tab.click()
-    await page.wait_for_timeout(2500)  # formulário de busca carregar
-
-    # Captura o src do iframe aninhado (será usado para recarregar entre buscas)
-    busca_src = await page.evaluate("""() => {
-        const f1 = document.getElementById('alvo');
-        const f2 = f1.contentDocument.querySelector('iframe');
-        return f2 ? f2.src : '';
+    # O menu usa CSS :hover — não funciona em headless. Navega o iframe #alvo
+    # diretamente para a URL da seção PIS/COFINS (link tem target="alvo").
+    pis_url = await page.evaluate("""() => {
+        const a = document.querySelector('a[title="PIS / COFINS"]');
+        return a ? a.href : '';
     }""")
-    print(f"✅ Seção PIS/COFINS aberta. iframe src: {busca_src[:80]}...")
-    return busca_src
+    if not pis_url:
+        pis_url = "https://www.econeteditora.com.br//pis_cofins/pis_cofins_capa.php"
+    await page.evaluate(f"""() => {{
+        const f = document.getElementById('alvo');
+        if (f) f.src = '{pis_url}';
+    }}""")
+    await page.wait_for_timeout(4000)  # iframe #alvo carregar
+
+    # Captura a URL de "Busca do Produto" no iframe #alvo e navega o iframe f2
+    # diretamente — evita clicar em elemento que pode estar oculto
+    busca_src = await page.evaluate("""() => {
+        try {
+            const f1 = document.getElementById('alvo');
+            if (!f1 || !f1.contentDocument) return '';
+            // Tenta pegar a URL do tab Busca do Produto
+            const link = f1.contentDocument.querySelector('a[href*="form"]');
+            if (link) {
+                const href = link.href || link.getAttribute('href');
+                // Normaliza para URL absoluta
+                if (href.startsWith('http')) return href;
+                return new URL(href, f1.src).href;
+            }
+            // Fallback: captura o iframe f2 já carregado
+            const f2 = f1.contentDocument.querySelector('iframe');
+            return f2 ? f2.src : '';
+        } catch(e) { return ''; }
+    }""")
+
+    if busca_src and "form" in busca_src:
+        # Navega f2 (container) para a URL de busca do produto
+        await page.evaluate(f"""() => {{
+            const f1 = document.getElementById('alvo');
+            if (!f1 || !f1.contentDocument) return;
+            const f2 = f1.contentDocument.querySelector('iframe');
+            if (f2) f2.src = '{busca_src}';
+        }}""")
+        await page.wait_for_timeout(4000)  # f2 e f3 carregarem
+    else:
+        # Fallback: tenta clicar no tab
+        busca_tab = page.frame_locator("#alvo").locator("text=Busca do Produto").first
+        await busca_tab.click(timeout=15000)
+        await page.wait_for_timeout(4000)
+
+    # Captura URL do nível mais profundo (f3 se existir, senão f2)
+    busca_src_real = await page.evaluate("""() => {
+        const f1 = document.getElementById('alvo');
+        if (!f1 || !f1.contentDocument) return '';
+        const f2 = f1.contentDocument.querySelector('iframe');
+        if (!f2) return '';
+        if (f2.contentDocument) {
+            const f3 = f2.contentDocument.querySelector('iframe');
+            if (f3) return f3.src;
+        }
+        return f2.src;
+    }""")
+
+    print(f"✅ Seção PIS/COFINS aberta. iframe src: {busca_src_real[:80] if busca_src_real else '(vazio)'}...")
+    return busca_src_real
 
 
 async def _js_iframe(page: object, script: str):
-    """Executa JS no iframe aninhado (alvo > iframe) e retorna o resultado."""
+    """Executa JS no iframe aninhado e retorna o resultado.
+    Suporta 2 ou 3 níveis de iframe: alvo > f2 > f3 (se f3 existir, usa-o como f2).
+    """
     return await page.evaluate(f"""() => {{
         try {{
             const f1 = document.getElementById('alvo');
-            const f2 = f1.contentDocument.querySelector('iframe');
+            let f2 = f1.contentDocument.querySelector('iframe');
+            // Econet adicionou nível extra: alvo > container > pis_cofins.php
+            if (f2 && f2.contentDocument) {{
+                const f3 = f2.contentDocument.querySelector('iframe');
+                if (f3) f2 = f3;
+            }}
             {script}
         }} catch(e) {{ return 'ERR: ' + e.message; }}
     }}""")
@@ -323,24 +373,32 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
     """Busca um NCM via JS direto no iframe e retorna os dados extraídos."""
     print(f"  Buscando NCM {ncm_formatado}...")
 
-    # Recarrega o iframe de busca diretamente pela URL capturada
+    # Recarrega o iframe mais profundo (f3=pis_cofins.php, apelido f2 no _js_iframe)
     await page.evaluate(f"""() => {{
         const f1 = document.getElementById('alvo');
         const f2 = f1.contentDocument.querySelector('iframe');
-        if (f2) f2.src = '{busca_src}';
+        if (!f2) return;
+        // Se há f3, recarrega f3; senão recarrega f2
+        if (f2.contentDocument) {{
+            const f3 = f2.contentDocument.querySelector('iframe');
+            if (f3) {{ f3.src = '{busca_src}'; return; }}
+        }}
+        f2.src = '{busca_src}';
     }}""")
     await page.wait_for_timeout(3000)  # formulário recarregar
 
     # 1. Preenche campo NCM e submete
     await _js_iframe(page, f"""
         const inp = f2.contentDocument.getElementById('inpCodigoNcm');
+        if (!inp) return 'ERR: inpCodigoNcm not found';
         inp.focus();
         inp.value = '{ncm_formatado}';
         return 'ok';
     """)
     await page.wait_for_timeout(1200)
     await _js_iframe(page, """
-        f2.contentDocument.querySelector('input[value="Pesquisar"]').click();
+        const btn = f2.contentDocument.querySelector('input[value="Pesquisar"]');
+        if (btn) btn.click();
         return 'ok';
     """)
     await page.wait_for_timeout(3500)
@@ -700,6 +758,10 @@ async def main():
         print(f"🔄 Modo --todos: {len(entradas)} NCMs serão verificados (incluindo já preenchidos)")
     else:
         print(f"📋 {len(entradas)} NCMs sem dados encontrados: {[formatar_ncm(n) for n in ncms]}")
+
+    if not entradas:
+        print("✅ Nenhum NCM para processar. Encerrando.")
+        return
 
     sessao_existe = SESSION.exists()
 

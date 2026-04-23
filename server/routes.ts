@@ -923,17 +923,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { mode } = req.body as { mode?: "incompletos" | "todos" };
       const args = ["econet_scraper.py", ...(mode === "todos" ? ["--todos"] : [])];
 
+      const logDir = path.resolve(".data");
+      if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+      const logFd = fs.openSync(path.join(logDir, "scraper.log"), "a");
+
       const child = spawn(PYTHON, args, {
         cwd: path.resolve("."),
         env: { ...process.env, PYTHONUNBUFFERED: "1" },
         detached: true,
-        stdio: "ignore",
+        stdio: ["ignore", logFd, logFd],
+      });
+
+      child.on("close", (code) => {
+        try { fs.closeSync(logFd); } catch {}
+        console.log(`[ncm-scan] scraper exited (code: ${code})`);
       });
 
       child.unref();
       if (child.pid) setActivePid(child.pid);
 
-      console.log(`[ncm-scan] econet_scraper triggered (pid: ${child.pid}) — mode: ${mode ?? "incompletos"}`);
+      console.log(`[ncm-scan] econet_scraper triggered (pid: ${child.pid}) — mode: ${mode ?? "incompletos"} — log: .data/scraper.log`);
       res.json({
         success: true,
         message: mode === "todos" ? "Varredura completa iniciada" : "Varredura de NCMs incompletos iniciada",
@@ -958,6 +967,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       setActivePid(null);
       res.json({ running: false });
     }
+  });
+
+  // GET /api/ncm-scan/logs — tail of scraper.log
+  app.get("/api/ncm-scan/logs", isAuthenticated, (_req, res) => {
+    const logPath = path.resolve(".data/scraper.log");
+    if (!fs.existsSync(logPath)) return res.json({ log: "(nenhum log disponível ainda)" });
+    const content = fs.readFileSync(logPath, "utf-8");
+    const lines = content.split("\n");
+    res.json({ log: lines.slice(-200).join("\n") });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1179,12 +1197,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         await rawRun("UPDATE scan_requests SET status='approved', updated_at=? WHERE id=?", [now, requestId]);
         const args = ["econet_scraper.py", ...(row.mode === "todos" ? ["--todos"] : [])];
+        const logDir2 = path.resolve(".data");
+        if (!fs.existsSync(logDir2)) fs.mkdirSync(logDir2, { recursive: true });
+        const logFd2 = fs.openSync(path.join(logDir2, "scraper.log"), "a");
         const child = spawn(PYTHON, args, {
-          cwd: path.resolve("."), env: { ...process.env, PYTHONUNBUFFERED: "1" }, detached: true, stdio: "ignore",
+          cwd: path.resolve("."), env: { ...process.env, PYTHONUNBUFFERED: "1" }, detached: true, stdio: ["ignore", logFd2, logFd2],
         });
+        child.on("close", (code) => { try { fs.closeSync(logFd2); } catch {} console.log(`[scan-requests] scraper exited (code: ${code})`); });
         child.unref();
         if (child.pid) setActivePid(child.pid);
-        console.log(`[scan-requests] Yuri aprovou — scan iniciado (pid: ${child.pid}) mode: ${row.mode}`);
+        console.log(`[scan-requests] Yuri aprovou — scan iniciado (pid: ${child.pid}) mode: ${row.mode} — log: .data/scraper.log`);
         return res.json({ success: true, newStatus: "approved", pid: child.pid });
       }
       return res.status(400).json({ message: "Solicitação não está em estado aprovável" });
