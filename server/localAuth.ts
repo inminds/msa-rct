@@ -32,6 +32,14 @@ const SEED_USERS = [
     role: "ADMIN",
     password: "Yuri@MS",
   },
+  {
+    id: "admin-inminds",
+    firstName: "Admin",
+    lastName: "InMinds",
+    email: "admin@inminds.com.br",
+    role: "ADMIN",
+    password: "admin",
+  },
 ];
 
 export async function seedUsers() {
