@@ -336,6 +336,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Tax analysis alerts summary
+  app.get("/api/tax-analysis/alerts", isAuthenticated, async (_req, res) => {
+    try {
+      const [excelRows, pendingChanges] = await Promise.all([
+        readNCMsFromExcel().catch(() => []),
+        (async () => {
+          const Database = (await import("better-sqlite3")).default;
+          const sqliteDb = new Database(".data/dev.db");
+          try {
+            const row = sqliteDb.prepare(
+              "SELECT COUNT(*) AS total FROM ncm_changes WHERE status = 'pending'"
+            ).get() as { total?: number | string } | undefined;
+            return Number(row?.total ?? 0);
+          } finally {
+            sqliteDb.close();
+          }
+        })(),
+      ]);
+
+      const isPreenchido = (r: any) => !!(r["PIS Cumulativo"] || r["PIS Não Cumulativo"]);
+
+      res.json({
+        pendingScans: excelRows.filter((row: any) => !isPreenchido(row)).length,
+        pendingChanges,
+      });
+    } catch (error) {
+      console.error("Error fetching tax analysis alerts:", error);
+      res.status(500).json({ message: "Failed to fetch tax analysis alerts" });
+    }
+  });
+
   // ── Reports ──────────────────────────────────────────────────────────────
 
   // POST /api/reports/generate

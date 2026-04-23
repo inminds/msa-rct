@@ -37,6 +37,13 @@ export default function TaxAnalysis() {
     queryKey: ["/api/dashboard/jurisdiction-distribution"],
   });
 
+  const { data: alertsSummary } = useQuery<{
+    pendingScans: number;
+    pendingChanges: number;
+  }>({
+    queryKey: ["/api/tax-analysis/alerts"],
+  });
+
   const getTaxColor = (type: string) => {
     switch (type) {
       case "ICMS":
@@ -185,22 +192,19 @@ export default function TaxAnalysis() {
                   <div className="flex items-center p-3 bg-amber-50 rounded-lg border border-amber-200">
                     <AlertTriangle className="w-5 h-5 text-amber-600 mr-3" />
                     <div>
-                      <p className="text-sm font-medium text-amber-800">NCMs sem Classificação</p>
-                      <p className="text-xs text-amber-600">3 códigos necessitam revisão manual</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center p-3 bg-red-50 rounded-lg border border-red-200">
-                    <AlertTriangle className="w-5 h-5 text-red-600 mr-3" />
-                    <div>
-                      <p className="text-sm font-medium text-red-800">Conflitos de Alíquota</p>
-                      <p className="text-xs text-red-600">2 NCMs com múltiplas interpretações</p>
+                      <p className="text-sm font-medium text-amber-800">NCMs pendentes para varredura</p>
+                      <p className="text-xs text-amber-600">
+                        {(alertsSummary?.pendingScans ?? 0)} códigos aguardando busca no Econet
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center p-3 bg-blue-50 rounded-lg border border-blue-200">
                     <AlertTriangle className="w-5 h-5 text-blue-600 mr-3" />
                     <div>
-                      <p className="text-sm font-medium text-blue-800">Atualizações Disponíveis</p>
-                      <p className="text-xs text-blue-600">5 regras tributárias foram atualizadas</p>
+                      <p className="text-sm font-medium text-blue-800">Mudanças aguardando aprovação</p>
+                      <p className="text-xs text-blue-600">
+                        {(alertsSummary?.pendingChanges ?? 0)} alteração(ões) identificadas no Econet
+                      </p>
                     </div>
                   </div>
                 </div>
