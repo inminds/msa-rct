@@ -41,6 +41,8 @@ interface Report {
   created_by: string;
   created_at: string;
   error_message: string | null;
+  download_count: number;
+  downloaded_by: string | null;
 }
 
 interface PreviewData {
@@ -171,6 +173,7 @@ export default function Reports() {
 
   const completed = reports.filter(r => r.status === "completed").length;
   const pending = reports.filter(r => r.status === "pending").length;
+  const totalDownloads = reports.reduce((sum, r) => sum + (r.download_count ?? 0), 0);
 
   const filtered = reports.filter(r => {
     const matchType = !typeFilter || typeFilter === "all" || r.type === typeFilter;
@@ -193,7 +196,7 @@ export default function Reports() {
 
         <div className="p-6 space-y-6">
           {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <Card>
               <CardContent className="p-6 flex items-center justify-between">
                 <div>
@@ -219,6 +222,15 @@ export default function Reports() {
                   <p className="text-3xl font-bold text-gray-900">{(stats as any)?.completedAnalyses ?? 0}</p>
                 </div>
                 <PieChart className="w-8 h-8 text-green-600" />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-6 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Downloads</p>
+                  <p className="text-3xl font-bold text-gray-900">{totalDownloads}</p>
+                </div>
+                <Download className="w-8 h-8 text-purple-600" />
               </CardContent>
             </Card>
           </div>
@@ -325,7 +337,7 @@ export default function Reports() {
                   <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
-                        {["Nome", "Tipo", "Formato", "Data", "Status", "Ações"].map(h => (
+                        {["Nome", "Tipo", "Formato", "Data", "Status", "Baixado por", "Ações"].map(h => (
                           <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{h}</th>
                         ))}
                       </tr>
@@ -344,6 +356,13 @@ export default function Reports() {
                             {format(new Date(report.created_at), "dd/MM/yyyy HH:mm")}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap">{getStatusBadge(report.status)}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                            {report.downloaded_by ? (
+                              <span title={`${report.download_count} download(s)`}>{report.downloaded_by}</span>
+                            ) : (
+                              <span className="text-gray-300">—</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 whitespace-nowrap">
                             <div className="flex gap-1">
                               <Button variant="ghost" size="sm" onClick={() => handlePreview(report)} title="Visualizar">

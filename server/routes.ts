@@ -383,15 +383,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // GET /api/reports/:id/download
-  app.get("/api/reports/:id/download", isAuthenticated, async (req, res) => {
+  app.get("/api/reports/:id/download", isAuthenticated, async (req: any, res) => {
     const Database = (await import("better-sqlite3")).default;
     const sqliteDb = new Database(".data/dev.db");
     const report = sqliteDb.prepare("SELECT * FROM reports WHERE id=?").get(req.params.id) as any;
-    sqliteDb.close();
     if (!report || report.status !== "completed" || !report.file_path) {
+      sqliteDb.close();
       return res.status(404).json({ message: "Arquivo não disponível" });
     }
-    if (!fs.existsSync(report.file_path)) return res.status(404).json({ message: "Arquivo não encontrado no servidor" });
+    if (!fs.existsSync(report.file_path)) {
+      sqliteDb.close();
+      return res.status(404).json({ message: "Arquivo não encontrado no servidor" });
+    }
+    const userId = (req.user as any)?.id ?? (req.user as any)?.claims?.sub ?? "unknown";
+    const userName = (req.user as any)?.firstName
+      ? `${(req.user as any).firstName} ${(req.user as any).lastName ?? ""}`.trim()
+      : userId;
+    sqliteDb.prepare(
+      "UPDATE reports SET download_count = download_count + 1, downloaded_by = ? WHERE id = ?"
+    ).run(userName, req.params.id);
+    sqliteDb.close();
     const ext = report.format === "xlsx" ? "xlsx" : "pdf";
     const safeName = report.name.replace(/[^a-zA-Z0-9\-_]/g, "_");
     res.download(report.file_path, `${safeName}.${ext}`);

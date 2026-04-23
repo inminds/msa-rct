@@ -108,7 +108,9 @@ if (isDev) {
       file_path TEXT,
       created_by VARCHAR,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      error_message TEXT
+      error_message TEXT,
+      download_count INTEGER NOT NULL DEFAULT 0,
+      downloaded_by VARCHAR
     );
     CREATE TABLE IF NOT EXISTS scan_schedule (
       id INTEGER PRIMARY KEY,
@@ -124,6 +126,13 @@ if (isDev) {
   `);
 
   db = drizzleSqlite({ client: sqliteDb, schema });
+
+  // Column migrations for existing DBs
+  const reportCols = (sqliteDb.pragma('table_info(reports)') as { name: string }[]).map(c => c.name);
+  if (!reportCols.includes('download_count'))
+    sqliteDb.exec("ALTER TABLE reports ADD COLUMN download_count INTEGER NOT NULL DEFAULT 0");
+  if (!reportCols.includes('downloaded_by'))
+    sqliteDb.exec("ALTER TABLE reports ADD COLUMN downloaded_by VARCHAR");
 
   console.log(`✅ SQLite development database initialized at: ${db_path}`);
 } else {
