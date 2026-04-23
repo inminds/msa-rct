@@ -304,11 +304,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Tax distribution (public for demo)
+  // Tax distribution — count NCMs from Excel that have each tribute filled
   app.get('/api/dashboard/tax-distribution', async (req, res) => {
     try {
-      const distribution = await storage.getTaxDistribution();
-      res.json(distribution);
+      const rows = await readNCMsFromExcel().catch(() => []);
+      const hasPis = (r: any) => !!(r["PIS Cumulativo"] || r["PIS Não Cumulativo"]);
+      const hasCofins = (r: any) => !!(r["COFINS Cumulativo"] || r["COFINS Não Cumulativo"]);
+      res.json({
+        pis: rows.filter(hasPis).length,
+        cofins: rows.filter(hasCofins).length,
+        icms: 0,
+        ipi: 0,
+      });
     } catch (error) {
       console.error("Error fetching tax distribution:", error);
       res.status(500).json({ message: "Failed to fetch tax distribution" });
@@ -1191,6 +1198,17 @@ async function processFileAsync(uploadId: string, fileContent: string, fileType:
     const ncmCodes = processedItems.map(item => item.ncmCode);
     const result = await addNCMsToExcel(ncmCodes);
     console.log(`[processFile] Excel updated — added: ${result.added.join(", ") || "none (all already present"}`);
+
+    // Save extracted NCMs to ncm_items table so the dashboard count works
+    for (const item of processedItems) {
+      await storage.createNCMItem({
+        ncmCode: item.ncmCode,
+        description: item.description ?? null,
+        productName: item.productName ?? null,
+        uploadId,
+      });
+    }
+    console.log(`[processFile] Saved ${processedItems.length} NCM items to database`);
 
     await storage.updateUploadStatus(uploadId, 'COMPLETED');
     console.log(`[processFile] Done: uploadId=${uploadId} → COMPLETED`);

@@ -208,21 +208,25 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(uploads.uploadedAt))
       .limit(limit);
 
-    return Promise.all(
-      recentUploads.map(async (upload) => {
-        const [user] = await db.select().from(users).where(eq(users.id, upload.userId));
-        const [{ ncmItemsCount }] = await db
-          .select({ ncmItemsCount: sql<number>`cast(count(*) as int)` })
-          .from(ncmItems)
-          .where(eq(ncmItems.uploadId, upload.id));
-
-        return {
-          ...upload,
-          user: user as User,
-          ncmItemsCount: ncmItemsCount ?? 0,
-        };
-      }),
-    );
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteDb = new Database(".data/dev.db");
+    try {
+      return await Promise.all(
+        recentUploads.map(async (upload) => {
+          const [user] = await db.select().from(users).where(eq(users.id, upload.userId));
+          const row = sqliteDb.prepare(
+            "SELECT COUNT(*) as c FROM ncm_items WHERE upload_id = ?"
+          ).get(upload.id) as any;
+          return {
+            ...upload,
+            user: user as User,
+            ncmItemsCount: row?.c ?? 0,
+          };
+        }),
+      );
+    } finally {
+      sqliteDb.close();
+    }
   }
 
   async getRecentAnalyses(limit = 10): Promise<(NCMItem & { upload: Upload; tributes: Tribute[] })[]> {
