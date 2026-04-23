@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { UploadModal } from "@/components/UploadModal";
@@ -7,8 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
 import {
   FileCheck,
   BarChart3,
@@ -17,18 +15,13 @@ import {
   Download,
   Eye,
   Edit,
-  Check,
   Bot,
   RefreshCw,
   Bell,
-  Database,
-  Trash2,
 } from "lucide-react";
 
 export default function Dashboard() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
 
   // Fetch dashboard data
   const { data: stats } = useQuery({
@@ -51,44 +44,27 @@ export default function Dashboard() {
     queryKey: ["/api/dashboard/jurisdiction-distribution"],
   });
 
+  const { data: rpaStatus } = useQuery<any>({
+    queryKey: ["/api/rpa/status"],
+  });
+
+  const { data: pendingChanges } = useQuery<any[]>({
+    queryKey: ["/api/ncm-changes", "pending"],
+    queryFn: async () => {
+      const res = await fetch("/api/ncm-changes?status=pending", { credentials: "include" });
+      return res.ok ? res.json() : [];
+    },
+  });
+
+  const { data: allChanges } = useQuery<any[]>({
+    queryKey: ["/api/ncm-changes", "all"],
+    queryFn: async () => {
+      const res = await fetch("/api/ncm-changes?status=all", { credentials: "include" });
+      return res.ok ? res.json() : [];
+    },
+  });
+
   // Demo data mutations
-  const generateDemoMutation = useMutation({
-    mutationFn: () => apiRequest("/api/generate-demo-data", { method: "POST" }),
-    onSuccess: () => {
-      toast({
-        title: "Dados de demonstração criados",
-        description: "Os dados fictícios foram populados com sucesso.",
-      });
-      // Invalidate all queries to refetch data
-      queryClient.invalidateQueries();
-    },
-    onError: () => {
-      toast({
-        title: "Erro",
-        description: "Falha ao gerar dados de demonstração.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const clearDemoMutation = useMutation({
-    mutationFn: () => apiRequest("/api/clear-demo-data", { method: "POST" }),
-    onSuccess: () => {
-      toast({
-        title: "Dados limpos",
-        description: "Os dados de demonstração foram removidos.",
-      });
-      queryClient.invalidateQueries();
-    },
-    onError: () => {
-      toast({
-        title: "Erro",
-        description: "Falha ao limpar dados de demonstração.",
-        variant: "destructive",
-      });
-    },
-  });
-
   const getTaxColor = (type: string) => {
     switch (type) {
       case "ICMS":
@@ -147,9 +123,8 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="mt-4 flex items-center text-sm">
-                  <TrendingUp className="text-green-600 w-4 h-4 mr-1" />
-                  <span className="text-green-600 font-medium">+12%</span>
-                  <span className="text-gray-500 ml-1">vs mês anterior</span>
+                  <TrendingUp className="text-gray-400 w-4 h-4 mr-1" />
+                  <span className="text-gray-400">Total acumulado</span>
                 </div>
               </CardContent>
             </Card>
@@ -168,9 +143,8 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="mt-4 flex items-center text-sm">
-                  <TrendingUp className="text-green-600 w-4 h-4 mr-1" />
-                  <span className="text-green-600 font-medium">+8%</span>
-                  <span className="text-gray-500 ml-1">vs mês anterior</span>
+                  <TrendingUp className="text-gray-400 w-4 h-4 mr-1" />
+                  <span className="text-gray-400">Total acumulado</span>
                 </div>
               </CardContent>
             </Card>
@@ -189,9 +163,8 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="mt-4 flex items-center text-sm">
-                  <TrendingUp className="text-green-600 w-4 h-4 mr-1" />
-                  <span className="text-green-600 font-medium">+15%</span>
-                  <span className="text-gray-500 ml-1">vs mês anterior</span>
+                  <TrendingUp className="text-gray-400 w-4 h-4 mr-1" />
+                  <span className="text-gray-400">Total acumulado</span>
                 </div>
               </CardContent>
             </Card>
@@ -210,8 +183,8 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="mt-4 flex items-center text-sm">
-                  <span className="text-red-600 font-medium">+3</span>
-                  <span className="text-gray-500 ml-1">novos hoje</span>
+                  <Clock className="text-gray-400 w-4 h-4 mr-1" />
+                  <span className="text-gray-400">Aguardando revisão</span>
                 </div>
               </CardContent>
             </Card>
@@ -223,7 +196,6 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle>Fila de Processamento</CardTitle>
                 <div className="flex items-center space-x-2">
-                  <span className="text-sm text-gray-500">Atualizado há 2 min</span>
                   <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                 </div>
               </div>
@@ -396,14 +368,14 @@ export default function Dashboard() {
                                 className={`${getTaxColor(tribute.type)} bg-opacity-20 text-gray-800`}
                                 data-testid={`tribute-${tribute.type}-${analysis.id}`}
                               >
-                                {tribute.type} {tribute.rate}%
+                                {tribute.type} {String(tribute.rate).replace(/%$/, "")}%
                               </Badge>
                             ))}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          {analysis.tributes?.some((t: any) => t.validated) ? (
-                            <Badge className="bg-green-100 text-green-800">Validado</Badge>
+                          {(analysis as any).status === "COMPLETED" || analysis.tributes?.some((t: any) => t.validated) ? (
+                            <Badge className="bg-green-100 text-green-800">Concluído</Badge>
                           ) : (
                             <Badge className="bg-amber-100 text-amber-800">Pendente</Badge>
                           )}
@@ -429,57 +401,6 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {/* Demo Area */}
-          <Card className="border-2 border-dashed border-blue-300 bg-blue-50">
-            <CardHeader>
-              <div className="flex items-center space-x-2">
-                <Database className="text-blue-600" />
-                <CardTitle className="text-blue-800">Área de Demonstração</CardTitle>
-              </div>
-              <p className="text-sm text-blue-700">
-                Popule dados fictícios para testar todas as funcionalidades do sistema
-              </p>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Button
-                  onClick={() => generateDemoMutation.mutate()}
-                  disabled={generateDemoMutation.isPending}
-                  className="bg-blue-600 hover:bg-blue-700"
-                  data-testid="button-generate-demo-data"
-                >
-                  <Database className="w-4 h-4 mr-2" />
-                  {generateDemoMutation.isPending ? "Gerando..." : "Popular Dados Fictícios"}
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  onClick={() => clearDemoMutation.mutate()}
-                  disabled={clearDemoMutation.isPending}
-                  className="border-red-300 text-red-600 hover:bg-red-50"
-                  data-testid="button-clear-demo-data"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  {clearDemoMutation.isPending ? "Limpando..." : "Limpar Dados"}
-                </Button>
-              </div>
-              
-              <div className="mt-4 p-3 bg-blue-100 rounded-md">
-                <p className="text-sm text-blue-800">
-                  <strong>O que será criado:</strong>
-                </p>
-                <ul className="text-sm text-blue-700 mt-2 space-y-1">
-                  <li>• 247 Arquivos processados, 1.834 NCMs, 189 análises, 12 pendentes</li>
-                  <li>• Fila de processamento com 3 arquivos (SPED processando 65%, XML concluído, CSV aguardando)</li>
-                  <li>• Distribuição de tributos: ICMS 847, IPI 523, PIS 1.234, COFINS 1.234</li>
-                  <li>• Competência: 68% Federal (1.247), 32% Estadual (587)</li>
-                  <li>• Análises recentes com NCMs reais: máquinas offset, cerveja, automóveis</li>
-                  <li>• Status de validação com badges coloridos (validado/pendente)</li>
-                </ul>
-              </div>
-            </CardContent>
-          </Card>
-
           {/* RPA Status Widget */}
           <Card>
             <CardHeader>
@@ -488,12 +409,18 @@ export default function Dashboard() {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="text-center">
-                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <Bot className="text-green-600 text-2xl" />
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 ${rpaStatus?.service_status === "active" ? "bg-green-100" : "bg-gray-100"}`}>
+                    <Bot className={`text-2xl ${rpaStatus?.service_status === "active" ? "text-green-600" : "text-gray-400"}`} />
                   </div>
                   <h4 className="font-semibold text-gray-900">Status do RPA</h4>
-                  <p className="text-sm text-green-600 font-medium">Ativo e Monitorando</p>
-                  <p className="text-xs text-gray-500 mt-1">Última verificação: 14:23</p>
+                  <p className={`text-sm font-medium ${rpaStatus?.service_status === "active" ? "text-green-600" : "text-gray-500"}`}>
+                    {rpaStatus?.service_status === "active" ? "Ativo e Monitorando" : rpaStatus?.service_status ?? "—"}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {rpaStatus?.last_execution
+                      ? `Última: ${new Date(rpaStatus.last_execution).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+                      : "Sem execuções"}
+                  </p>
                 </div>
                 <div className="text-center">
                   <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -501,9 +428,9 @@ export default function Dashboard() {
                   </div>
                   <h4 className="font-semibold text-gray-900">Alterações Detectadas</h4>
                   <p className="text-sm text-blue-600 font-medium" data-testid="rpa-changes-detected">
-                    7 esta semana
+                    {allChanges?.length ?? 0} no total
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">Última: ICMS/SP hoje</p>
+                  <p className="text-xs text-gray-500 mt-1">Monitoramento de NCMs</p>
                 </div>
                 <div className="text-center">
                   <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -511,7 +438,7 @@ export default function Dashboard() {
                   </div>
                   <h4 className="font-semibold text-gray-900">Alertas Pendentes</h4>
                   <p className="text-sm text-amber-600 font-medium" data-testid="rpa-pending-alerts">
-                    3 para revisar
+                    {pendingChanges?.length ?? 0} para revisar
                   </p>
                   <p className="text-xs text-gray-500 mt-1">Requer validação manual</p>
                 </div>
@@ -520,7 +447,9 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Próxima execução programada:</span>
                   <span className="text-sm font-medium text-gray-900" data-testid="rpa-next-execution">
-                    Hoje às 18:00
+                    {rpaStatus?.next_scheduled_execution
+                      ? new Date(rpaStatus.next_scheduled_execution).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
+                      : "Não agendado"}
                   </span>
                 </div>
               </div>
