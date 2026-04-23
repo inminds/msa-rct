@@ -223,9 +223,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard stats (public for demo)
   app.get('/api/dashboard/stats', async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub || 'demo-user';
-      const stats = await storage.getDashboardStats(userId);
-      res.json(stats);
+      const [dbStats, excelRows] = await Promise.all([
+        storage.getDashboardStats(req.user?.claims?.sub),
+        readNCMsFromExcel().catch(() => []),
+      ]);
+
+      const isPreenchido = (r: any) => !!(r["PIS Cumulativo"] || r["PIS Não Cumulativo"]);
+
+      res.json({
+        processedFiles: dbStats.processedFiles,
+        ncmCodes: excelRows.length,
+        completedAnalyses: excelRows.filter(isPreenchido).length,
+        pendingValidation: dbStats.pendingValidation,
+      });
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
       res.status(500).json({ message: "Failed to fetch dashboard stats" });
@@ -256,11 +266,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Recent analyses (public for demo)
+  // Recent analyses — last filled NCMs from Excel
   app.get('/api/analyses/recent', async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 10;
-      const analyses = await storage.getRecentAnalyses(limit);
+      const rows = await readNCMsFromExcel();
+
+      const isPreenchido = (r: any) => !!(r["PIS Cumulativo"] || r["PIS Não Cumulativo"]);
+      const filled = rows.filter(isPreenchido).slice(-3).reverse();
+
+      const analyses = filled.map((r, i) => {
+        const tributes: any[] = [];
+        if (r["PIS Cumulativo"])
+          tributes.push({ id: `pis-cum-${i}`, type: "PIS", rate: r["PIS Cumulativo"], validated: true });
+        if (r["COFINS Cumulativo"])
+          tributes.push({ id: `cof-cum-${i}`, type: "COFINS", rate: r["COFINS Cumulativo"], validated: true });
+        if (r["PIS Não Cumulativo"] && r["PIS Não Cumulativo"] !== r["PIS Cumulativo"])
+          tributes.push({ id: `pis-nc-${i}`, type: "PIS", rate: r["PIS Não Cumulativo"], validated: true });
+        if (r["COFINS Não Cumulativo"] && r["COFINS Não Cumulativo"] !== r["COFINS Cumulativo"])
+          tributes.push({ id: `cof-nc-${i}`, type: "COFINS", rate: r["COFINS Não Cumulativo"], validated: true });
+
+        return {
+          id: `excel-${r["NCM"]}-${i}`,
+          ncmCode: r["NCM"],
+          productName: r["Descrição"] || r["NCM Econet"] || r["NCM"],
+          description: r["Descrição"] || "",
+          regime: r["Regime"] || "",
+          status: "COMPLETED",
+          tributes,
+        };
+      });
+
       res.json(analyses);
     } catch (error) {
       console.error("Error fetching recent analyses:", error);
@@ -282,8 +318,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Jurisdiction distribution (public for demo)
   app.get('/api/dashboard/jurisdiction-distribution', async (req, res) => {
     try {
-      const distribution = await storage.getJurisdictionDistribution();
-      res.json(distribution);
+      const rows = await readNCMsFromExcel().catch(() => []);
+      res.json({ federal: rows.length, estadual: 0 });
     } catch (error) {
       console.error("Error fetching jurisdiction distribution:", error);
       res.status(500).json({ message: "Failed to fetch jurisdiction distribution" });
@@ -499,27 +535,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // RPA status and monitoring endpoints
   app.get("/api/rpa/status", async (req, res) => {
     try {
-      // Mock status for now - will integrate with actual RPA database
-      const status = {
-        service_status: "active",
-        last_execution: new Date().toISOString(),
-        portals_monitored: ["Econet", "Receita Federal do Brasil"],
-        total_executions_today: 3,
-        successful_executions_today: 2,
-        changes_detected_today: 1,
-        critical_changes_pending: 0,
-        next_scheduled_execution: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), // 6 hours
-        system_health: "healthy"
-      };
+      const Database = (await import("better-sqlite3")).default;
+      const sqliteDb = new Database(".data/dev.db");
 
-      res.json(status);
+      const schedule = sqliteDb.prepare("SELECT * FROM scan_schedule WHERE id = 1").get() as any;
+      const lastChange = sqliteDb.prepare(
+        "SELECT scan_date FROM ncm_changes ORDER BY scan_date DESC LIMIT 1"
+      ).get() as any;
+      sqliteDb.close();
+
+      let next_scheduled_execution: string | null = null;
+      if (schedule?.enabled) {
+        const now = new Date();
+        const h = schedule.hour ?? 8;
+        const m = schedule.minute ?? 0;
+        // Find next matching day (up to 31 days ahead)
+        for (let i = 1; i <= 31; i++) {
+          const candidate = new Date(now);
+          candidate.setDate(now.getDate() + i);
+          candidate.setHours(h, m, 0, 0);
+          const match = schedule.frequency === "monthly"
+            ? candidate.getDate() === (schedule.day_of_month ?? 1)
+            : candidate.getDay() === (schedule.day_of_week ?? 1);
+          if (match) { next_scheduled_execution = candidate.toISOString(); break; }
+        }
+      }
+
+      res.json({
+        service_status: schedule?.enabled ? "active" : "inactive",
+        last_execution: lastChange?.scan_date ?? null,
+        next_scheduled_execution,
+        system_health: "healthy",
+      });
     } catch (error) {
       console.error("Error fetching RPA status:", error);
-      res.status(500).json({
-        service_status: "error",
-        message: "Failed to fetch RPA status",
-        system_health: "unhealthy"
-      });
+      res.status(500).json({ service_status: "error", system_health: "unhealthy" });
     }
   });
 

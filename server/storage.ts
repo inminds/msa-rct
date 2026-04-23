@@ -174,31 +174,31 @@ export class DatabaseStorage implements IStorage {
     completedAnalyses: number;
     pendingValidation: number;
   }> {
-    const [[{ processedFiles }], [{ ncmCodes }], [{ completedAnalyses }], [{ pendingValidation }]] =
-      await Promise.all([
-        db
-          .select({ processedFiles: sql<number>`cast(count(*) as int)` })
-          .from(uploads)
-          .where(eq(uploads.status, 'COMPLETED')),
-        db
-          .select({ ncmCodes: sql<number>`cast(count(distinct ${ncmItems.ncmCode}) as int)` })
-          .from(ncmItems),
-        db
-          .select({ completedAnalyses: sql<number>`cast(count(*) as int)` })
-          .from(tributes)
-          .where(isNotNull(tributes.validated)),
-        db
-          .select({ pendingValidation: sql<number>`cast(count(*) as int)` })
-          .from(tributes)
-          .where(isNull(tributes.validated)),
-      ]);
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteDb = new Database(".data/dev.db");
+    try {
+      const processedFiles = (sqliteDb.prepare(
+        "SELECT COUNT(*) as c FROM uploads WHERE status = 'COMPLETED'"
+      ).get() as any)?.c ?? 0;
 
-    return {
-      processedFiles: processedFiles ?? 0,
-      ncmCodes: ncmCodes ?? 0,
-      completedAnalyses: completedAnalyses ?? 0,
-      pendingValidation: pendingValidation ?? 0,
-    };
+      const ncmCodes = (sqliteDb.prepare(
+        "SELECT COUNT(DISTINCT ncm_code) as c FROM ncm_items"
+      ).get() as any)?.c ?? 0;
+
+      // Análises concluídas = NCMs que foram scaneados pelo Econet com sucesso
+      const completedAnalyses = (sqliteDb.prepare(
+        "SELECT COUNT(*) as c FROM ncm_items WHERE econet_status IN ('FOUND', 'PARTIAL')"
+      ).get() as any)?.c ?? 0;
+
+      // Pendentes validação = mudanças detectadas aguardando aceite
+      const pendingValidation = (sqliteDb.prepare(
+        "SELECT COUNT(*) as c FROM ncm_changes WHERE status = 'pending'"
+      ).get() as any)?.c ?? 0;
+
+      return { processedFiles, ncmCodes, completedAnalyses, pendingValidation };
+    } finally {
+      sqliteDb.close();
+    }
   }
 
   async getRecentUploads(limit = 10): Promise<(Upload & { user: User; ncmItemsCount: number })[]> {
@@ -226,10 +226,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getRecentAnalyses(limit = 10): Promise<(NCMItem & { upload: Upload; tributes: Tribute[] })[]> {
+    // Only return NCMs that were actually analysed by Econet, ordered by scan date
     const items = await db
       .select()
       .from(ncmItems)
-      .orderBy(desc(ncmItems.createdAt))
+      .where(sql`${ncmItems.econetStatus} IN ('FOUND', 'PARTIAL')`)
+      .orderBy(desc(ncmItems.econetScannedAt))
       .limit(limit);
 
     return Promise.all(
@@ -251,40 +253,42 @@ export class DatabaseStorage implements IStorage {
     pis: number;
     cofins: number;
   }> {
-    const rows = await db
-      .select({
-        type: tributes.type,
-        count: sql<number>`cast(count(*) as int)`,
-      })
-      .from(tributes)
-      .groupBy(tributes.type);
-
-    const dist = { icms: 0, ipi: 0, pis: 0, cofins: 0 };
-    for (const row of rows) {
-      const key = row.type.toLowerCase() as keyof typeof dist;
-      if (key in dist) dist[key] = row.count ?? 0;
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteDb = new Database(".data/dev.db");
+    try {
+      const rows = sqliteDb.prepare(
+        "SELECT type, COUNT(*) as c FROM tributes GROUP BY type"
+      ).all() as { type: string; c: number }[];
+      const dist = { icms: 0, ipi: 0, pis: 0, cofins: 0 };
+      for (const row of rows) {
+        const key = row.type.toLowerCase() as keyof typeof dist;
+        if (key in dist) dist[key] = row.c;
+      }
+      return dist;
+    } finally {
+      sqliteDb.close();
     }
-    return dist;
   }
 
   async getJurisdictionDistribution(): Promise<{
     federal: number;
     estadual: number;
   }> {
-    const rows = await db
-      .select({
-        jurisdiction: tributes.jurisdiction,
-        count: sql<number>`cast(count(*) as int)`,
-      })
-      .from(tributes)
-      .groupBy(tributes.jurisdiction);
-
-    const dist = { federal: 0, estadual: 0 };
-    for (const row of rows) {
-      const key = row.jurisdiction.toLowerCase() as keyof typeof dist;
-      if (key in dist) dist[key] = row.count ?? 0;
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteDb = new Database(".data/dev.db");
+    try {
+      const rows = sqliteDb.prepare(
+        "SELECT jurisdiction, COUNT(*) as c FROM tributes GROUP BY jurisdiction"
+      ).all() as { jurisdiction: string; c: number }[];
+      const dist = { federal: 0, estadual: 0 };
+      for (const row of rows) {
+        const key = row.jurisdiction.toLowerCase() as keyof typeof dist;
+        if (key in dist) dist[key] = row.c;
+      }
+      return dist;
+    } finally {
+      sqliteDb.close();
     }
-    return dist;
   }
 
   async hasExistingTributeData(ncmCode: string): Promise<boolean> {
