@@ -8,6 +8,9 @@
 import path from "path";
 import fs from "fs";
 import ExcelJS from "exceljs";
+import { createRequire } from "module";
+
+const _require = createRequire(import.meta.url);
 
 // Mantido apenas para compatibilidade com código legado que importa PYTHON
 export const PYTHON = process.env.PYTHON_PATH ?? "python3";
@@ -57,31 +60,35 @@ export async function readNCMsFromExcel(): Promise<NCMExcelRow[]> {
     return [];
   }
   try {
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.readFile(EXCEL_PATH);
-    const ws = wb.getWorksheet(SHEET_NAME) ?? wb.worksheets[0];
+    // SheetJS (xlsx) é mais tolerante com arquivos Excel que têm features
+    // avançadas (estilos, named ranges, etc.) que o exceljs não suporta.
+    const XLSX = _require("xlsx");
+    const wb = XLSX.readFile(EXCEL_PATH, { type: "file", cellText: false, cellDates: true });
+    const sheetName = wb.SheetNames.includes(SHEET_NAME)
+      ? SHEET_NAME
+      : wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
     if (!ws) return [];
 
+    const raw: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
     const rows: NCMExcelRow[] = [];
-    ws.eachRow((row, rowNum) => {
-      if (rowNum === 1) return; // pula cabeçalho se houver
-      const ncm = cellText(row.getCell(1)).trim();
-      if (!ncm) return; // linha vazia
-      const obj: NCMExcelRow = {
+    for (let i = 0; i < raw.length; i++) {
+      const r = raw[i];
+      const ncm = String(r[0] ?? "").trim();
+      if (!ncm || ncm === "NCM") continue; // pula vazia ou cabeçalho
+      rows.push({
         NCM: ncm,
-        "NCM Econet": cellText(row.getCell(2)),
-        "Descrição": cellText(row.getCell(3)),
-        "PIS Cumulativo": cellText(row.getCell(4)),
-        "COFINS Cumulativo": cellText(row.getCell(5)),
-        "PIS Não Cumulativo": cellText(row.getCell(6)),
-        "COFINS Não Cumulativo": cellText(row.getCell(7)),
-        Regime: cellText(row.getCell(8)),
-        Legislação: cellText(row.getCell(9)),
-      };
-      // Ignora a linha de cabeçalho caso o Excel não tenha linha de header separada
-      if (obj.NCM === "NCM") return;
-      rows.push(obj);
-    });
+        "NCM Econet": String(r[1] ?? ""),
+        "Descrição": String(r[2] ?? ""),
+        "PIS Cumulativo": String(r[3] ?? ""),
+        "COFINS Cumulativo": String(r[4] ?? ""),
+        "PIS Não Cumulativo": String(r[5] ?? ""),
+        "COFINS Não Cumulativo": String(r[6] ?? ""),
+        Regime: String(r[7] ?? ""),
+        Legislação: String(r[8] ?? ""),
+      });
+    }
     return rows;
   } catch (err) {
     console.error("[excelService] Erro ao ler bcoDados.xlsx:", err);
