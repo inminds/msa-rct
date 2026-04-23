@@ -2,7 +2,7 @@ import path from "path";
 import fs from "fs";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
-import type { NCMExcelRow } from "./excelService";
+import type { NCMExcelRow, NCMExcelFullRow } from "./excelService";
 
 const REPORTS_DIR = process.env.NODE_ENV === "production"
   ? "/tmp/reports"
@@ -31,7 +31,7 @@ export function buildTaxSummaryData(rows: NCMExcelRow[]) {
   return { title: "Resumo Tributário", headers, data, total: rows.length, filled: filled.length };
 }
 
-export function buildNCMAnalysisData(rows: NCMExcelRow[]) {
+export function buildNCMAnalysisData(rows: NCMExcelFullRow[]) {
   const headers = getDynamicHeaders(rows as unknown as ReportRow[]);
   const data = rows.map(r => headers.map(h => r[h] ?? ""));
   return { title: "Análise Detalhada de NCMs", headers, data };
@@ -234,7 +234,7 @@ export async function generateReportFile(
     data = d.data;
     extraInfo = `Total: ${d.total} NCMs | Preenchidos: ${d.filled}`;
   } else if (type === "ncm-analysis") {
-    const d = buildNCMAnalysisData(excelRows);
+    const d = buildNCMAnalysisData(excelRows as unknown as NCMExcelFullRow[]);
     title = d.title;
     headers = d.headers;
     data = d.data;
@@ -259,6 +259,6 @@ export function getPreviewData(
   changes: any[]
 ): { title: string; headers: string[]; data: (string | number)[][] } {
   if (type === "tax-summary") return buildTaxSummaryData(excelRows);
-  if (type === "ncm-analysis") return buildNCMAnalysisData(excelRows);
+  if (type === "ncm-analysis") return buildNCMAnalysisData(excelRows as unknown as NCMExcelFullRow[]);
   return buildTrendData(changes);
 }

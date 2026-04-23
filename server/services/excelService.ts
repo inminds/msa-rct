@@ -44,6 +44,10 @@ export interface NCMExcelRow {
   [key: string]: string;
 }
 
+export interface NCMExcelFullRow {
+  [key: string]: string;
+}
+
 function cellText(cell: ExcelJS.Cell): string {
   if (cell.value === null || cell.value === undefined) return "";
   if (typeof cell.value === "object" && "richText" in (cell.value as any)) {
@@ -92,6 +96,43 @@ export async function readNCMsFromExcel(): Promise<NCMExcelRow[]> {
     return rows;
   } catch (err) {
     console.error("[excelService] Erro ao ler bcoDados.xlsx:", err);
+    return [];
+  }
+}
+
+export async function readNCMsFromExcelFull(): Promise<NCMExcelFullRow[]> {
+  if (!fs.existsSync(EXCEL_PATH)) {
+    console.warn("[excelService] bcoDados.xlsx não encontrado em:", EXCEL_PATH);
+    return [];
+  }
+  try {
+    const XLSX = _require("xlsx");
+    const wb = XLSX.readFile(EXCEL_PATH, { type: "file", cellText: false, cellDates: true });
+    const sheetName = wb.SheetNames.includes(SHEET_NAME)
+      ? SHEET_NAME
+      : wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+    if (!ws) return [];
+
+    const raw: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+    if (raw.length === 0) return [];
+
+    const headers = raw[0].map((h: any) => String(h ?? "").trim());
+    const rows: NCMExcelFullRow[] = [];
+    for (let i = 1; i < raw.length; i++) {
+      const r = raw[i];
+      const ncm = String(r[0] ?? "").trim();
+      if (!ncm) continue;
+      const entry: NCMExcelFullRow = {};
+      headers.forEach((header, idx) => {
+        if (!header) return;
+        entry[header] = String(r[idx] ?? "");
+      });
+      rows.push(entry);
+    }
+    return rows;
+  } catch (err) {
+    console.error("[excelService] Erro ao ler bcoDados.xlsx completo:", err);
     return [];
   }
 }

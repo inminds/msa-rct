@@ -13,7 +13,7 @@ import { spawn, execFile } from "child_process";
 import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 import path from "path";
-import { readNCMsFromExcel, addNCMsToExcel, PYTHON } from "./services/excelService";
+import { readNCMsFromExcel, readNCMsFromExcelFull, addNCMsToExcel, PYTHON } from "./services/excelService";
 import { applySchedule, cancelSchedule } from "./services/schedulerService";
 import { setActivePid, getActivePid } from "./services/scanState";
 import { generateReportFile, getPreviewData, type ReportType, type ReportFormat } from "./services/reportService";
@@ -383,7 +383,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     (async () => {
       try {
         const [excelRows, changes] = await Promise.all([
-          readNCMsFromExcel().catch(() => []),
+          type === "ncm-analysis" ? readNCMsFromExcelFull().catch(() => []) : readNCMsFromExcel().catch(() => []),
           rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC"),
         ]);
         const filePath = await generateReportFile(id, name, type, format, excelRows as any, changes);
@@ -437,7 +437,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const report = await rawGet("SELECT * FROM reports WHERE id=?", [req.params.id]) as any;
     const changes = await rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC");
     if (!report) return res.status(404).json({ message: "Relatório não encontrado" });
-    const excelRows = await readNCMsFromExcel().catch(() => []);
+    const excelRows = report.type === "ncm-analysis"
+      ? await readNCMsFromExcelFull().catch(() => [])
+      : await readNCMsFromExcel().catch(() => []);
     const preview = getPreviewData(report.type as ReportType, excelRows as any, changes);
     res.json({ ...preview, reportName: report.name, format: report.format, status: report.status });
   });
@@ -447,7 +449,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const type = req.query.type as ReportType;
     if (!type) return res.status(400).json({ message: "type obrigatório" });
     const changes = await rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC");
-    const excelRows = await readNCMsFromExcel().catch(() => []);
+    const excelRows = type === "ncm-analysis"
+      ? await readNCMsFromExcelFull().catch(() => [])
+      : await readNCMsFromExcel().catch(() => []);
     const preview = getPreviewData(type, excelRows as any, changes);
     const names: Record<string, string> = {
       "tax-summary": "Resumo Tributário",
