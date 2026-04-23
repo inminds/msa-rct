@@ -32,6 +32,7 @@ async function setupDatabase() {
         last_name VARCHAR,
         profile_image_url VARCHAR,
         role VARCHAR DEFAULT 'USER',
+        password_hash VARCHAR,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )`,

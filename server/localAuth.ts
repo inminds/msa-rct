@@ -19,7 +19,7 @@ const SEED_USERS = [
     firstName: "Thayssa",
     lastName: "",
     email: "thayssa@machadoschutz.adv.br",
-    role: "USER",
+    role: "ADMIN",
     password: "Thayssa@MS",
   },
   {
@@ -27,7 +27,7 @@ const SEED_USERS = [
     firstName: "Yuri",
     lastName: "",
     email: "yuri@machadoschutz.adv.br",
-    role: "USER",
+    role: "ADMIN",
     password: "Yuri@MS",
   },
 ];
@@ -38,7 +38,7 @@ export async function seedUsers() {
   const sqliteDb = new Database(".data/dev.db");
 
   for (const u of SEED_USERS) {
-    const existing = sqliteDb.prepare("SELECT id, password_hash FROM users WHERE id = ?").get(u.id) as any;
+    const existing = sqliteDb.prepare("SELECT id, role, password_hash FROM users WHERE id = ?").get(u.id) as any;
     if (!existing) {
       const hash = await bcrypt.hash(u.password, 10);
       sqliteDb.prepare(`
@@ -46,12 +46,17 @@ export async function seedUsers() {
         VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       `).run(u.id, u.firstName, u.lastName, u.email, u.role, hash);
       console.log(`[localAuth] Usuário "${u.id}" criado.`);
-    } else if (!existing.password_hash) {
-      const hash = await bcrypt.hash(u.password, 10);
-      sqliteDb.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, u.id);
-      console.log(`[localAuth] Senha de "${u.id}" atualizada.`);
     } else {
-      console.log(`[localAuth] Usuário "${u.id}" já existe com senha.`);
+      if (!existing.password_hash) {
+        const hash = await bcrypt.hash(u.password, 10);
+        sqliteDb.prepare("UPDATE users SET password_hash = ?, role = ? WHERE id = ?").run(hash, u.role, u.id);
+        console.log(`[localAuth] Senha e role de "${u.id}" atualizados.`);
+      } else if (existing.role !== u.role) {
+        sqliteDb.prepare("UPDATE users SET role = ? WHERE id = ?").run(u.role, u.id);
+        console.log(`[localAuth] Role de "${u.id}" atualizado para ${u.role}.`);
+      } else {
+        console.log(`[localAuth] Usuário "${u.id}" já existe com senha.`);
+      }
     }
   }
 
