@@ -26,7 +26,6 @@ import {
   Loader2,
   X,
 } from "lucide-react";
-import { format } from "date-fns";
 
 type ReportType = "tax-summary" | "ncm-analysis" | "trend-analysis" | "jurisdiction-report";
 type ReportFormat = "xlsx" | "pdf";
@@ -360,7 +359,7 @@ export default function Reports() {
                             <span className="text-xs font-mono uppercase bg-gray-100 px-2 py-1 rounded">{report.format}</span>
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                            {format(new Date(report.created_at), "dd/MM/yyyy HH:mm")}
+                            {report.created_at ? report.created_at.replace(/-/g, "/") : "?"}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap">{getStatusBadge(report.status)}</td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">

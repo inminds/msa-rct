@@ -396,7 +396,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // GET /api/reports
   app.get("/api/reports", isAuthenticated, async (_req, res) => {
-    const rows = await rawAll("SELECT * FROM reports ORDER BY created_at DESC") as any[];
+    const rows = await rawAll(
+      `SELECT
+         id,
+         name,
+         type,
+         format,
+         status,
+         file_path,
+         created_by,
+         datetime(created_at, 'localtime') AS created_at,
+         error_message,
+         download_count,
+         downloaded_by
+       FROM reports
+       ORDER BY created_at DESC`
+    ) as any[];
     const totalDownloadsRow = await rawGet(
       "SELECT COALESCE(SUM(CASE WHEN download_count IS NULL THEN 0 ELSE download_count END), 0) AS total FROM reports"
     ) as { total?: number | string } | undefined;
