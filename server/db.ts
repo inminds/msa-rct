@@ -1,26 +1,30 @@
 import * as schema from "@shared/schema";
-import Database from 'better-sqlite3';
-import { drizzle as drizzleSqlite } from 'drizzle-orm/better-sqlite3';
+import { createRequire } from "module";
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import { drizzle as drizzleNeon } from 'drizzle-orm/neon-serverless';
 import ws from "ws";
 import fs from 'fs';
 
+const _require = createRequire(import.meta.url);
+
 let db: any;
 let pool: any;
 
 const isDev = process.env.NODE_ENV === 'development';
+const SQLITE_PATH = process.env.SQLITE_DB_PATH ?? './.data/dev.db';
 
 if (isDev) {
   // ✅ Development: SQLite (zero config, file-based)
-  const db_path = './.data/dev.db';
+  const { drizzle: drizzleSqlite } = _require('drizzle-orm/better-sqlite3');
+  const Database = _require('better-sqlite3');
 
-  if (!fs.existsSync('./.data')) {
-    fs.mkdirSync('./.data', { recursive: true });
+  const dataDir = SQLITE_PATH.substring(0, SQLITE_PATH.lastIndexOf('/'));
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
   }
 
-  const sqliteDb = new Database(db_path);
-  sqliteDb.pragma('journal_mode = WAL'); // Better for concurrent access
+  const sqliteDb = new Database(SQLITE_PATH);
+  sqliteDb.pragma('journal_mode = WAL');
 
   // Auto-create tables (idempotent)
   sqliteDb.exec(`
@@ -123,18 +127,33 @@ if (isDev) {
       mode VARCHAR NOT NULL DEFAULT 'incompletos',
       updated_at TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS scan_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      requested_by VARCHAR NOT NULL,
+      mode VARCHAR NOT NULL DEFAULT 'incompletos',
+      status VARCHAR NOT NULL DEFAULT 'pending_thayssa',
+      rejected_by VARCHAR,
+      rejection_note TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (requested_by) REFERENCES users(id)
+    );
   `);
 
   db = drizzleSqlite({ client: sqliteDb, schema });
 
   // Column migrations for existing DBs
-  const reportCols = (sqliteDb.pragma('table_info(reports)') as { name: string }[]).map(c => c.name);
+  const reportCols = (sqliteDb.pragma('table_info(reports)') as { name: string }[]).map((c: any) => c.name);
   if (!reportCols.includes('download_count'))
     sqliteDb.exec("ALTER TABLE reports ADD COLUMN download_count INTEGER NOT NULL DEFAULT 0");
   if (!reportCols.includes('downloaded_by'))
     sqliteDb.exec("ALTER TABLE reports ADD COLUMN downloaded_by VARCHAR");
 
-  console.log(`✅ SQLite development database initialized at: ${db_path}`);
+  const userCols = (sqliteDb.pragma('table_info(users)') as { name: string }[]).map((c: any) => c.name);
+  if (!userCols.includes('password_hash'))
+    sqliteDb.exec("ALTER TABLE users ADD COLUMN password_hash VARCHAR");
+
+  console.log(`✅ SQLite development database initialized at: ${SQLITE_PATH}`);
 } else {
   // Production: PostgreSQL (Neon)
   neonConfig.webSocketConstructor = ws;
@@ -147,6 +166,47 @@ if (isDev) {
 
   pool = new Pool({ connectionString: process.env.DATABASE_URL });
   db = drizzleNeon({ client: pool, schema });
+
+  // Ensure extra tables (not in Drizzle schema) exist in PostgreSQL
+  // Fire-and-forget — runs before first request thanks to Node.js event loop
+  pool.query(`
+    CREATE TABLE IF NOT EXISTS ncm_changes (
+      id SERIAL PRIMARY KEY,
+      ncm VARCHAR NOT NULL,
+      field VARCHAR NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      status VARCHAR NOT NULL DEFAULT 'pending',
+      scan_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      resolved_at TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS reports (
+      id VARCHAR PRIMARY KEY,
+      name TEXT NOT NULL,
+      type VARCHAR NOT NULL,
+      format VARCHAR NOT NULL,
+      status VARCHAR NOT NULL DEFAULT 'pending',
+      file_path TEXT,
+      created_by VARCHAR,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      error_message TEXT,
+      download_count INTEGER NOT NULL DEFAULT 0,
+      downloaded_by VARCHAR
+    );
+    CREATE TABLE IF NOT EXISTS scan_requests (
+      id SERIAL PRIMARY KEY,
+      requested_by VARCHAR NOT NULL,
+      mode VARCHAR NOT NULL DEFAULT 'incompletos',
+      status VARCHAR NOT NULL DEFAULT 'pending_thayssa',
+      rejected_by VARCHAR,
+      rejection_note TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR;
+  `).catch((err: Error) => {
+    console.warn('[db] Aviso ao criar tabelas extras no PostgreSQL:', err.message);
+  });
 
   console.log('✅ PostgreSQL production database initialized');
 }

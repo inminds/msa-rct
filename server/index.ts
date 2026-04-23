@@ -38,10 +38,10 @@ app.use((req, res, next) => {
 
 (async () => {
   const isDev = process.env.NODE_ENV === "development";
-  if (isDev) {
-    setupLocalAuth(app);
-    await seedUsers();
-  }
+
+  // Local auth runs in all environments (dev + production)
+  setupLocalAuth(app);
+  await seedUsers();
 
   const server = await registerRoutes(app);
   await initScheduler();

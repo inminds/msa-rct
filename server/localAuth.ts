@@ -1,6 +1,7 @@
 /**
- * localAuth.ts — autenticação local (dev) com passport-local + memorystore
- * Funciona com SQLite em desenvolvimento. Produção continua usando Replit OIDC.
+ * localAuth.ts — autenticação local com passport-local + session.
+ * Dev:  SQLite via rawDb + MemoryStore
+ * Prod: PostgreSQL via rawDb + connect-pg-simple
  */
 import session from "express-session";
 import passport from "passport";
@@ -8,6 +9,7 @@ import { Strategy as LocalStrategy } from "passport-local";
 import MemoryStore from "memorystore";
 import bcrypt from "bcryptjs";
 import type { Express, RequestHandler } from "express";
+import { rawGet, rawRun } from "./rawDb.js";
 
 const MemStore = MemoryStore(session);
 
@@ -33,34 +35,35 @@ const SEED_USERS = [
 ];
 
 export async function seedUsers() {
-  // Usamos SQLite direto para lidar com password_hash (coluna fora do schema Drizzle)
-  const Database = (await import("better-sqlite3")).default;
-  const sqliteDb = new Database(".data/dev.db");
-
   for (const u of SEED_USERS) {
-    const existing = sqliteDb.prepare("SELECT id, role, password_hash FROM users WHERE id = ?").get(u.id) as any;
+    const existing = await rawGet(
+      "SELECT id, role, password_hash FROM users WHERE id = ?",
+      [u.id]
+    );
     if (!existing) {
       const hash = await bcrypt.hash(u.password, 10);
-      sqliteDb.prepare(`
-        INSERT INTO users (id, first_name, last_name, email, role, password_hash, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      `).run(u.id, u.firstName, u.lastName, u.email, u.role, hash);
+      await rawRun(
+        `INSERT INTO users (id, first_name, last_name, email, role, password_hash, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [u.id, u.firstName, u.lastName, u.email, u.role, hash]
+      );
       console.log(`[localAuth] Usuário "${u.id}" criado.`);
     } else {
       if (!existing.password_hash) {
         const hash = await bcrypt.hash(u.password, 10);
-        sqliteDb.prepare("UPDATE users SET password_hash = ?, role = ? WHERE id = ?").run(hash, u.role, u.id);
+        await rawRun(
+          "UPDATE users SET password_hash = ?, role = ? WHERE id = ?",
+          [hash, u.role, u.id]
+        );
         console.log(`[localAuth] Senha e role de "${u.id}" atualizados.`);
       } else if (existing.role !== u.role) {
-        sqliteDb.prepare("UPDATE users SET role = ? WHERE id = ?").run(u.role, u.id);
+        await rawRun("UPDATE users SET role = ? WHERE id = ?", [u.role, u.id]);
         console.log(`[localAuth] Role de "${u.id}" atualizado para ${u.role}.`);
       } else {
         console.log(`[localAuth] Usuário "${u.id}" já existe com senha.`);
       }
     }
   }
-
-  sqliteDb.close();
 }
 
 // ─── Configuração do passport-local ─────────────────────────────────────────
@@ -68,19 +71,22 @@ export async function seedUsers() {
 passport.use(
   new LocalStrategy(async (username, password, done) => {
     try {
-      // Usar SQLite direto para buscar password_hash (coluna fora do schema Drizzle)
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
-      const user = sqliteDb.prepare(
-        "SELECT id, first_name, last_name, email, role, password_hash FROM users WHERE id = ?"
-      ).get(username.toLowerCase()) as any;
-      sqliteDb.close();
-
+      const user = await rawGet(
+        "SELECT id, first_name, last_name, email, role, password_hash FROM users WHERE id = ?",
+        [username.toLowerCase()]
+      );
       if (!user) return done(null, false, { message: "Usuário não encontrado" });
-      if (!user.password_hash) return done(null, false, { message: "Usuário sem senha configurada" });
+      if (!user.password_hash)
+        return done(null, false, { message: "Usuário sem senha configurada" });
       const ok = await bcrypt.compare(password, user.password_hash);
       if (!ok) return done(null, false, { message: "Senha incorreta" });
-      return done(null, { id: user.id, firstName: user.first_name, lastName: user.last_name, email: user.email, role: user.role });
+      return done(null, {
+        id: user.id,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        role: user.role,
+      });
     } catch (err) {
       return done(err);
     }
@@ -88,16 +94,21 @@ passport.use(
 );
 
 passport.serializeUser((user: any, cb) => cb(null, user.id));
+
 passport.deserializeUser(async (id: string, cb) => {
   try {
-    const Database = (await import("better-sqlite3")).default;
-    const sqliteDb = new Database(".data/dev.db");
-    const user = sqliteDb.prepare(
-      "SELECT id, first_name, last_name, email, role FROM users WHERE id = ?"
-    ).get(id) as any;
-    sqliteDb.close();
+    const user = await rawGet(
+      "SELECT id, first_name, last_name, email, role FROM users WHERE id = ?",
+      [id]
+    );
     if (!user) return cb(null, null);
-    cb(null, { id: user.id, firstName: user.first_name, lastName: user.last_name, email: user.email, role: user.role });
+    cb(null, {
+      id: user.id,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      email: user.email,
+      role: user.role,
+    });
   } catch (err) {
     cb(err);
   }
@@ -107,14 +118,34 @@ passport.deserializeUser(async (id: string, cb) => {
 
 export function setupLocalAuth(app: Express) {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
+  const isProd = process.env.NODE_ENV === "production";
+
+  let store: session.Store;
+
+  if (isProd && process.env.DATABASE_URL) {
+    // Sessões persistentes no PostgreSQL
+    const ConnectPgSimple = require("connect-pg-simple")(session);
+    store = new ConnectPgSimple({
+      conString: process.env.DATABASE_URL,
+      tableName: "sessions",
+      createTableIfMissing: true,
+    });
+  } else {
+    store = new MemStore({ checkPeriod: sessionTtl });
+  }
 
   app.use(
     session({
       secret: process.env.SESSION_SECRET ?? "dev-secret-rct-2024",
-      store: new MemStore({ checkPeriod: sessionTtl }),
+      store,
       resave: false,
       saveUninitialized: false,
-      cookie: { httpOnly: true, maxAge: sessionTtl },
+      cookie: {
+        httpOnly: true,
+        maxAge: sessionTtl,
+        secure: isProd,
+        sameSite: isProd ? "none" : "lax",
+      },
     })
   );
 
@@ -125,10 +156,17 @@ export function setupLocalAuth(app: Express) {
   app.post("/api/auth/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) return next(err);
-      if (!user) return res.status(401).json({ message: info?.message ?? "Credenciais inválidas" });
+      if (!user)
+        return res.status(401).json({ message: info?.message ?? "Credenciais inválidas" });
       req.logIn(user, (loginErr) => {
         if (loginErr) return next(loginErr);
-        res.json({ id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, role: user.role });
+        res.json({
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+        });
       });
     })(req, res, next);
   });

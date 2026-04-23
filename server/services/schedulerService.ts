@@ -58,16 +58,13 @@ async function detectAndSaveChanges(
       return;
     }
 
-    // Save to ncm_changes table using better-sqlite3 directly
-    const Database = (await import("better-sqlite3")).default;
-    const sqliteDb = new Database(".data/dev.db");
-    const stmt = sqliteDb.prepare(
-      "INSERT INTO ncm_changes (ncm, field, old_value, new_value, status, scan_date) VALUES (?, ?, ?, ?, 'pending', ?)"
-    );
+    const { rawRun } = await import("../rawDb.js");
     for (const c of changes) {
-      stmt.run(c.ncm, c.field, c.oldValue, c.newValue, scanDate);
+      await rawRun(
+        "INSERT INTO ncm_changes (ncm, field, old_value, new_value, status, scan_date) VALUES (?, ?, ?, ?, 'pending', ?)",
+        [c.ncm, c.field, c.oldValue, c.newValue, scanDate]
+      );
     }
-    sqliteDb.close();
 
     console.log(`[scheduler] ${changes.length} mudança(s) detectada(s) e salva(s) em ncm_changes.`);
   } catch (err) {

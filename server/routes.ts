@@ -17,6 +17,7 @@ import { readNCMsFromExcel, addNCMsToExcel, PYTHON } from "./services/excelServi
 import { applySchedule, cancelSchedule } from "./services/schedulerService";
 import { setActivePid, getActivePid } from "./services/scanState";
 import { generateReportFile, getPreviewData, type ReportType, type ReportFormat } from "./services/reportService";
+import { rawGet, rawAll, rawRun } from "./rawDb.js";
 import { randomUUID } from "crypto";
 import fs from "fs";
 
@@ -342,16 +343,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const [excelRows, pendingChanges] = await Promise.all([
         readNCMsFromExcel().catch(() => []),
         (async () => {
-          const Database = (await import("better-sqlite3")).default;
-          const sqliteDb = new Database(".data/dev.db");
-          try {
-            const row = sqliteDb.prepare(
-              "SELECT COUNT(*) AS total FROM ncm_changes WHERE status = 'pending'"
-            ).get() as { total?: number | string } | undefined;
-            return Number(row?.total ?? 0);
-          } finally {
-            sqliteDb.close();
-          }
+          const row = await rawGet(
+            "SELECT COUNT(*) AS total FROM ncm_changes WHERE status = 'pending'"
+          ) as { total?: number | string } | undefined;
+          return Number(row?.total ?? 0);
         })(),
       ]);
 
@@ -377,42 +372,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const id = randomUUID();
     const userId = (req.user as any)?.id ?? (req.user as any)?.claims?.sub ?? "unknown";
 
-    const Database = (await import("better-sqlite3")).default;
-    const sqliteDb = new Database(".data/dev.db");
-    sqliteDb.prepare(
-      "INSERT INTO reports (id, name, type, format, status, created_by) VALUES (?, ?, ?, ?, 'pending', ?)"
-    ).run(id, name, type, format, userId);
-    sqliteDb.close();
+    await rawRun(
+      "INSERT INTO reports (id, name, type, format, status, created_by) VALUES (?, ?, ?, ?, 'pending', ?)",
+      [id, name, type, format, userId]
+    );
 
     res.json({ id, status: "pending" });
 
     // Generate async
     (async () => {
-      const db2 = new (await import("better-sqlite3")).default(".data/dev.db");
       try {
         const [excelRows, changes] = await Promise.all([
           readNCMsFromExcel().catch(() => []),
-          Promise.resolve(db2.prepare("SELECT * FROM ncm_changes ORDER BY scan_date DESC").all()),
+          rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC"),
         ]);
         const filePath = await generateReportFile(id, name, type, format, excelRows as any, changes);
-        db2.prepare("UPDATE reports SET status='completed', file_path=? WHERE id=?").run(filePath, id);
+        await rawRun("UPDATE reports SET status='completed', file_path=? WHERE id=?", [filePath, id]);
       } catch (err: any) {
-        db2.prepare("UPDATE reports SET status='error', error_message=? WHERE id=?").run(err.message, id);
-      } finally {
-        db2.close();
+        await rawRun("UPDATE reports SET status='error', error_message=? WHERE id=?", [err.message, id]);
       }
     })();
   });
 
   // GET /api/reports
   app.get("/api/reports", isAuthenticated, async (_req, res) => {
-    const Database = (await import("better-sqlite3")).default;
-    const sqliteDb = new Database(".data/dev.db");
-    const rows = sqliteDb.prepare("SELECT * FROM reports ORDER BY created_at DESC").all() as any[];
-    const totalDownloadsRow = sqliteDb.prepare(
+    const rows = await rawAll("SELECT * FROM reports ORDER BY created_at DESC") as any[];
+    const totalDownloadsRow = await rawGet(
       "SELECT COALESCE(SUM(CASE WHEN download_count IS NULL THEN 0 ELSE download_count END), 0) AS total FROM reports"
-    ).get() as { total?: number | string } | undefined;
-    sqliteDb.close();
+    ) as { total?: number | string } | undefined;
 
     res.json({
       reports: rows.map((report) => ({
@@ -425,25 +412,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // GET /api/reports/:id/download
   app.get("/api/reports/:id/download", isAuthenticated, async (req: any, res) => {
-    const Database = (await import("better-sqlite3")).default;
-    const sqliteDb = new Database(".data/dev.db");
-    const report = sqliteDb.prepare("SELECT * FROM reports WHERE id=?").get(req.params.id) as any;
+    const report = await rawGet("SELECT * FROM reports WHERE id=?", [req.params.id]) as any;
     if (!report || report.status !== "completed" || !report.file_path) {
-      sqliteDb.close();
       return res.status(404).json({ message: "Arquivo não disponível" });
     }
     if (!fs.existsSync(report.file_path)) {
-      sqliteDb.close();
       return res.status(404).json({ message: "Arquivo não encontrado no servidor" });
     }
     const userId = (req.user as any)?.id ?? (req.user as any)?.claims?.sub ?? "unknown";
     const userName = (req.user as any)?.firstName
       ? `${(req.user as any).firstName} ${(req.user as any).lastName ?? ""}`.trim()
       : userId;
-    sqliteDb.prepare(
-      "UPDATE reports SET download_count = download_count + 1, downloaded_by = ? WHERE id = ?"
-    ).run(userName, req.params.id);
-    sqliteDb.close();
+    await rawRun(
+      "UPDATE reports SET download_count = download_count + 1, downloaded_by = ? WHERE id = ?",
+      [userName, req.params.id]
+    );
     const ext = report.format === "xlsx" ? "xlsx" : "pdf";
     const safeName = report.name.replace(/[^a-zA-Z0-9\-_]/g, "_");
     res.download(report.file_path, `${safeName}.${ext}`);
@@ -451,11 +434,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // GET /api/reports/:id/preview
   app.get("/api/reports/:id/preview", isAuthenticated, async (req, res) => {
-    const Database = (await import("better-sqlite3")).default;
-    const sqliteDb = new Database(".data/dev.db");
-    const report = sqliteDb.prepare("SELECT * FROM reports WHERE id=?").get(req.params.id) as any;
-    const changes = sqliteDb.prepare("SELECT * FROM ncm_changes ORDER BY scan_date DESC").all();
-    sqliteDb.close();
+    const report = await rawGet("SELECT * FROM reports WHERE id=?", [req.params.id]) as any;
+    const changes = await rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC");
     if (!report) return res.status(404).json({ message: "Relatório não encontrado" });
     const excelRows = await readNCMsFromExcel().catch(() => []);
     const preview = getPreviewData(report.type as ReportType, excelRows as any, changes);
@@ -466,10 +446,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/reports/preview-template", isAuthenticated, async (req, res) => {
     const type = req.query.type as ReportType;
     if (!type) return res.status(400).json({ message: "type obrigatório" });
-    const Database = (await import("better-sqlite3")).default;
-    const sqliteDb = new Database(".data/dev.db");
-    const changes = sqliteDb.prepare("SELECT * FROM ncm_changes ORDER BY scan_date DESC").all();
-    sqliteDb.close();
+    const changes = await rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC");
     const excelRows = await readNCMsFromExcel().catch(() => []);
     const preview = getPreviewData(type, excelRows as any, changes);
     const names: Record<string, string> = {
@@ -482,10 +459,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // GET /api/reports/:id/status (polling)
   app.get("/api/reports/:id/status", isAuthenticated, async (req, res) => {
-    const Database = (await import("better-sqlite3")).default;
-    const sqliteDb = new Database(".data/dev.db");
-    const report = sqliteDb.prepare("SELECT id, status, error_message FROM reports WHERE id=?").get(req.params.id) as any;
-    sqliteDb.close();
+    const report = await rawGet("SELECT id, status, error_message FROM reports WHERE id=?", [req.params.id]) as any;
     if (!report) return res.status(404).json({ message: "Não encontrado" });
     res.json(report);
   });
@@ -603,7 +577,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Clear all database (development only)
   app.post('/api/admin/clear-database', async (req, res) => {
-    if (isDev) {
+    if (process.env.NODE_ENV !== 'production') {
       try {
         await storage.clearAllData();
         res.json({ message: "✅ All database data cleared successfully" });
@@ -699,14 +673,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // RPA status and monitoring endpoints
   app.get("/api/rpa/status", async (req, res) => {
     try {
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
-
-      const schedule = sqliteDb.prepare("SELECT * FROM scan_schedule WHERE id = 1").get() as any;
-      const lastChange = sqliteDb.prepare(
+      const schedule = await rawGet("SELECT * FROM scan_schedule WHERE id = 1") as any;
+      const lastChange = await rawGet(
         "SELECT scan_date FROM ncm_changes ORDER BY scan_date DESC LIMIT 1"
-      ).get() as any;
-      sqliteDb.close();
+      ) as any;
 
       let next_scheduled_execution: string | null = null;
       if (schedule?.enabled) {
@@ -929,6 +899,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // POST /api/ncm-scan/trigger — triggers the econet_scraper.py process
   // mode: "incompletos" (default) | "todos"
   app.post("/api/ncm-scan/trigger", isAuthenticated, async (req: any, res) => {
+    if (process.env.NODE_ENV === 'production') return res.status(503).json({ message: 'Não disponível em produção' });
     try {
       const { mode } = req.body as { mode?: "incompletos" | "todos" };
       const args = ["econet_scraper.py", ...(mode === "todos" ? ["--todos"] : [])];
@@ -974,12 +945,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User management endpoints (admin only)
   app.get("/api/users", isAdmin, async (_req, res) => {
     try {
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
-      const rows = sqliteDb.prepare(
+      const rows = await rawAll(
         "SELECT id, first_name, last_name, email, role, created_at, updated_at FROM users ORDER BY created_at ASC"
-      ).all() as any[];
-      sqliteDb.close();
+      ) as any[];
       res.json(rows.map(u => ({
         id: u.id, firstName: u.first_name, lastName: u.last_name,
         email: u.email, role: u.role, createdAt: u.created_at, updatedAt: u.updated_at,
@@ -994,15 +962,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { id, firstName, lastName, email, role, password } = req.body;
       if (!id || !firstName || !password) return res.status(400).json({ message: "id, nome e senha são obrigatórios" });
       const bcrypt = (await import("bcryptjs")).default;
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
-      const existing = sqliteDb.prepare("SELECT id FROM users WHERE id = ?").get(id.toLowerCase());
-      if (existing) { sqliteDb.close(); return res.status(409).json({ message: "Usuário já existe" }); }
+      const existing = await rawGet("SELECT id FROM users WHERE id = ?", [id.toLowerCase()]);
+      if (existing) { return res.status(409).json({ message: "Usuário já existe" }); }
       const hash = await bcrypt.hash(password, 10);
-      sqliteDb.prepare(
-        "INSERT INTO users (id, first_name, last_name, email, role, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
-      ).run(id.toLowerCase(), firstName, lastName ?? "", email ?? "", role ?? "USER", hash);
-      sqliteDb.close();
+      await rawRun(
+        "INSERT INTO users (id, first_name, last_name, email, role, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
+        [id.toLowerCase(), firstName, lastName ?? "", email ?? "", role ?? "USER", hash]
+      );
       res.status(201).json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Erro ao criar usuário" });
@@ -1013,19 +979,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { firstName, lastName, email, role, password } = req.body;
       const bcrypt = (await import("bcryptjs")).default;
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
       if (password) {
         const hash = await bcrypt.hash(password, 10);
-        sqliteDb.prepare(
-          "UPDATE users SET first_name=?, last_name=?, email=?, role=?, password_hash=?, updated_at=datetime('now') WHERE id=?"
-        ).run(firstName, lastName ?? "", email ?? "", role ?? "USER", hash, req.params.id);
+        await rawRun(
+          "UPDATE users SET first_name=?, last_name=?, email=?, role=?, password_hash=?, updated_at=datetime('now') WHERE id=?",
+          [firstName, lastName ?? "", email ?? "", role ?? "USER", hash, req.params.id]
+        );
       } else {
-        sqliteDb.prepare(
-          "UPDATE users SET first_name=?, last_name=?, email=?, role=?, updated_at=datetime('now') WHERE id=?"
-        ).run(firstName, lastName ?? "", email ?? "", role ?? "USER", req.params.id);
+        await rawRun(
+          "UPDATE users SET first_name=?, last_name=?, email=?, role=?, updated_at=datetime('now') WHERE id=?",
+          [firstName, lastName ?? "", email ?? "", role ?? "USER", req.params.id]
+        );
       }
-      sqliteDb.close();
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Erro ao atualizar usuário" });
@@ -1035,10 +1000,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/users/:id", isAdmin, async (req: any, res) => {
     try {
       if (req.params.id === (req.user as any).id) return res.status(400).json({ message: "Você não pode excluir sua própria conta" });
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
-      sqliteDb.prepare("DELETE FROM users WHERE id = ?").run(req.params.id);
-      sqliteDb.close();
+      await rawRun("DELETE FROM users WHERE id = ?", [req.params.id]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Erro ao excluir usuário" });
@@ -1112,17 +1074,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "mode deve ser 'incompletos' ou 'todos'" });
       }
       const userId = (req.user as any).id;
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
-      const active = sqliteDb.prepare(
-        "SELECT id FROM scan_requests WHERE requested_by = ? AND status IN ('pending_thayssa','pending_yuri')"
-      ).get(userId);
-      if (active) { sqliteDb.close(); return res.status(409).json({ message: "Você já tem uma solicitação ativa." }); }
+      const active = await rawGet(
+        "SELECT id FROM scan_requests WHERE requested_by = ? AND status IN ('pending_thayssa','pending_yuri')",
+        [userId]
+      );
+      if (active) { return res.status(409).json({ message: "Você já tem uma solicitação ativa." }); }
       const now = new Date().toISOString();
-      const result = sqliteDb.prepare(
-        "INSERT INTO scan_requests (requested_by, mode, status, created_at, updated_at) VALUES (?, ?, 'pending_thayssa', ?, ?)"
-      ).run(userId, mode, now, now);
-      sqliteDb.close();
+      const result = await rawRun(
+        "INSERT INTO scan_requests (requested_by, mode, status, created_at, updated_at) VALUES (?, ?, 'pending_thayssa', ?, ?)",
+        [userId, mode, now, now]
+      );
       res.status(201).json({ id: result.lastInsertRowid, status: "pending_thayssa" });
     } catch (error) {
       console.error("Error creating scan request:", error);
@@ -1134,12 +1095,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/scan-requests/mine", isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).id;
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
-      const row = sqliteDb.prepare(
-        "SELECT * FROM scan_requests WHERE requested_by = ? ORDER BY created_at DESC LIMIT 1"
-      ).get(userId) as any;
-      sqliteDb.close();
+      const row = await rawGet(
+        "SELECT * FROM scan_requests WHERE requested_by = ? ORDER BY created_at DESC LIMIT 1",
+        [userId]
+      ) as any;
       if (!row) return res.json(null);
       res.json({
         id: row.id, requestedBy: row.requested_by, mode: row.mode, status: row.status,
@@ -1159,14 +1118,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (userId === "thayssa") statusFilter = "pending_thayssa";
       else if (userId === "yuri") statusFilter = "pending_yuri";
       else return res.json([]);
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
-      const rows = sqliteDb.prepare(
+      const rows = await rawAll(
         `SELECT sr.*, u.first_name, u.last_name FROM scan_requests sr
          LEFT JOIN users u ON sr.requested_by = u.id
-         WHERE sr.status = ? ORDER BY sr.created_at ASC`
-      ).all(statusFilter) as any[];
-      sqliteDb.close();
+         WHERE sr.status = ? ORDER BY sr.created_at ASC`,
+        [statusFilter]
+      ) as any[];
       res.json(rows.map(r => ({
         id: r.id,
         requestedBy: r.requested_by,
@@ -1182,29 +1139,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // POST /api/scan-requests/:id/approve — aprovar (thayssa ou yuri dependendo do status)
   app.post("/api/scan-requests/:id/approve", isAdmin, async (req: any, res) => {
+    if (process.env.NODE_ENV === 'production') return res.status(503).json({ message: 'Não disponível em produção' });
     try {
       const userId = (req.user as any).id;
       const requestId = req.params.id;
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
-      const row = sqliteDb.prepare("SELECT * FROM scan_requests WHERE id = ?").get(requestId) as any;
-      if (!row) { sqliteDb.close(); return res.status(404).json({ message: "Solicitação não encontrada" }); }
+      const row = await rawGet("SELECT * FROM scan_requests WHERE id = ?", [requestId]) as any;
+      if (!row) { return res.status(404).json({ message: "Solicitação não encontrada" }); }
       const now = new Date().toISOString();
       if (row.status === "pending_thayssa") {
-        if (userId !== "thayssa") { sqliteDb.close(); return res.status(403).json({ message: "Somente a Thayssa pode aprovar nesta etapa" }); }
-        sqliteDb.prepare("UPDATE scan_requests SET status='pending_yuri', updated_at=? WHERE id=?").run(now, requestId);
-        sqliteDb.close();
+        if (userId !== "thayssa") { return res.status(403).json({ message: "Somente a Thayssa pode aprovar nesta etapa" }); }
+        await rawRun("UPDATE scan_requests SET status='pending_yuri', updated_at=? WHERE id=?", [now, requestId]);
         return res.json({ success: true, newStatus: "pending_yuri" });
       }
       if (row.status === "pending_yuri") {
-        if (userId !== "yuri") { sqliteDb.close(); return res.status(403).json({ message: "Somente o Yuri pode aprovar nesta etapa" }); }
+        if (userId !== "yuri") { return res.status(403).json({ message: "Somente o Yuri pode aprovar nesta etapa" }); }
         const activePid = getActivePid();
         if (activePid !== null) {
-          try { process.kill(activePid, 0); sqliteDb.close(); return res.status(409).json({ message: "Já há uma varredura em andamento. Tente novamente em instantes." }); }
+          try { process.kill(activePid, 0); return res.status(409).json({ message: "Já há uma varredura em andamento. Tente novamente em instantes." }); }
           catch { setActivePid(null); }
         }
-        sqliteDb.prepare("UPDATE scan_requests SET status='approved', updated_at=? WHERE id=?").run(now, requestId);
-        sqliteDb.close();
+        await rawRun("UPDATE scan_requests SET status='approved', updated_at=? WHERE id=?", [now, requestId]);
         const args = ["econet_scraper.py", ...(row.mode === "todos" ? ["--todos"] : [])];
         const child = spawn(PYTHON, args, {
           cwd: path.resolve("."), env: { ...process.env, PYTHONUNBUFFERED: "1" }, detached: true, stdio: "ignore",
@@ -1214,7 +1168,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`[scan-requests] Yuri aprovou — scan iniciado (pid: ${child.pid}) mode: ${row.mode}`);
         return res.json({ success: true, newStatus: "approved", pid: child.pid });
       }
-      sqliteDb.close();
       return res.status(400).json({ message: "Solicitação não está em estado aprovável" });
     } catch (error) {
       console.error("Error approving scan request:", error);
@@ -1228,18 +1181,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req.user as any).id;
       const requestId = req.params.id;
       const { note } = req.body as { note?: string };
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
-      const row = sqliteDb.prepare("SELECT * FROM scan_requests WHERE id = ?").get(requestId) as any;
-      if (!row) { sqliteDb.close(); return res.status(404).json({ message: "Solicitação não encontrada" }); }
-      if (row.status === "pending_thayssa" && userId !== "thayssa") { sqliteDb.close(); return res.status(403).json({ message: "Somente a Thayssa pode rejeitar nesta etapa" }); }
-      if (row.status === "pending_yuri" && userId !== "yuri") { sqliteDb.close(); return res.status(403).json({ message: "Somente o Yuri pode rejeitar nesta etapa" }); }
-      if (!["pending_thayssa", "pending_yuri"].includes(row.status)) { sqliteDb.close(); return res.status(400).json({ message: "Solicitação não está em estado rejeitável" }); }
+      const row = await rawGet("SELECT * FROM scan_requests WHERE id = ?", [requestId]) as any;
+      if (!row) { return res.status(404).json({ message: "Solicitação não encontrada" }); }
+      if (row.status === "pending_thayssa" && userId !== "thayssa") { return res.status(403).json({ message: "Somente a Thayssa pode rejeitar nesta etapa" }); }
+      if (row.status === "pending_yuri" && userId !== "yuri") { return res.status(403).json({ message: "Somente o Yuri pode rejeitar nesta etapa" }); }
+      if (!["pending_thayssa", "pending_yuri"].includes(row.status)) { return res.status(400).json({ message: "Solicitação não está em estado rejeitável" }); }
       const now = new Date().toISOString();
-      sqliteDb.prepare(
-        "UPDATE scan_requests SET status='rejected', rejected_by=?, rejection_note=?, updated_at=? WHERE id=?"
-      ).run(userId, note ?? null, now, requestId);
-      sqliteDb.close();
+      await rawRun(
+        "UPDATE scan_requests SET status='rejected', rejected_by=?, rejection_note=?, updated_at=? WHERE id=?",
+        [userId, note ?? null, now, requestId]
+      );
       res.json({ success: true, newStatus: "rejected" });
     } catch (error) {
       console.error("Error rejecting scan request:", error);
@@ -1254,12 +1205,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/ncm-changes", isAuthenticated, async (req, res) => {
     try {
       const status = (req.query.status as string) || "pending";
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
       const rows = status === "all"
-        ? sqliteDb.prepare("SELECT * FROM ncm_changes ORDER BY scan_date DESC").all() as any[]
-        : sqliteDb.prepare("SELECT * FROM ncm_changes WHERE status = ? ORDER BY scan_date DESC").all(status) as any[];
-      sqliteDb.close();
+        ? await rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC") as any[]
+        : await rawAll("SELECT * FROM ncm_changes WHERE status = ? ORDER BY scan_date DESC", [status]) as any[];
       res.json(rows.map(r => ({
         id: r.id, ncm: r.ncm, field: r.field,
         oldValue: r.old_value, newValue: r.new_value,
@@ -1274,12 +1222,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/ncm-changes/accept-all", isAdmin, async (_req, res) => {
     try {
       const now = new Date().toISOString();
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
-      const result = sqliteDb.prepare(
-        "UPDATE ncm_changes SET status='accepted', resolved_at=? WHERE status='pending'"
-      ).run(now);
-      sqliteDb.close();
+      const result = await rawRun(
+        "UPDATE ncm_changes SET status='accepted', resolved_at=? WHERE status='pending'",
+        [now]
+      );
       res.json({ success: true, updated: result.changes });
     } catch (error) {
       res.status(500).json({ message: "Erro ao aceitar mudanças" });
@@ -1290,12 +1236,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/ncm-changes/:id/accept", isAdmin, async (req, res) => {
     try {
       const now = new Date().toISOString();
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
-      const row = sqliteDb.prepare("SELECT * FROM ncm_changes WHERE id = ?").get(req.params.id) as any;
-      if (!row) { sqliteDb.close(); return res.status(404).json({ message: "Mudança não encontrada" }); }
-      sqliteDb.prepare("UPDATE ncm_changes SET status='accepted', resolved_at=? WHERE id=?").run(now, req.params.id);
-      sqliteDb.close();
+      const row = await rawGet("SELECT * FROM ncm_changes WHERE id = ?", [req.params.id]) as any;
+      if (!row) { return res.status(404).json({ message: "Mudança não encontrada" }); }
+      await rawRun("UPDATE ncm_changes SET status='accepted', resolved_at=? WHERE id=?", [now, req.params.id]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Erro ao aceitar mudança" });
@@ -1306,16 +1249,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/ncm-changes/:id/reject", isAdmin, async (req, res) => {
     try {
       const now = new Date().toISOString();
-      const Database = (await import("better-sqlite3")).default;
-      const sqliteDb = new Database(".data/dev.db");
-      const row = sqliteDb.prepare("SELECT * FROM ncm_changes WHERE id = ?").get(req.params.id) as any;
-      if (!row) { sqliteDb.close(); return res.status(404).json({ message: "Mudança não encontrada" }); }
+      const row = await rawGet("SELECT * FROM ncm_changes WHERE id = ?", [req.params.id]) as any;
+      if (!row) { return res.status(404).json({ message: "Mudança não encontrada" }); }
 
       // Restore old value in Excel
       await execFileAsync(PYTHON, ["excel_helper.py", "restore", row.ncm, row.field, row.old_value ?? ""], { cwd: path.resolve(".") });
 
-      sqliteDb.prepare("UPDATE ncm_changes SET status='rejected', resolved_at=? WHERE id=?").run(now, req.params.id);
-      sqliteDb.close();
+      await rawRun("UPDATE ncm_changes SET status='rejected', resolved_at=? WHERE id=?", [now, req.params.id]);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Erro ao rejeitar mudança:", error);

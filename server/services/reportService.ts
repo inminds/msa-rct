@@ -4,7 +4,9 @@ import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import type { NCMExcelRow } from "./excelService";
 
-const REPORTS_DIR = path.resolve(".data/reports");
+const REPORTS_DIR = process.env.NODE_ENV === "production"
+  ? "/tmp/reports"
+  : path.resolve(".data/reports");
 
 if (!fs.existsSync(REPORTS_DIR)) {
   fs.mkdirSync(REPORTS_DIR, { recursive: true });
