@@ -15,6 +15,11 @@ export type ReportFormat = "xlsx" | "pdf";
 
 export interface ReportRow { [key: string]: string | number }
 
+function getDynamicHeaders(rows: ReportRow[]): string[] {
+  if (rows.length === 0) return [];
+  return Object.keys(rows[0]);
+}
+
 // ── Data builders ────────────────────────────────────────────────────────────
 
 export function buildTaxSummaryData(rows: NCMExcelRow[]) {
@@ -25,7 +30,7 @@ export function buildTaxSummaryData(rows: NCMExcelRow[]) {
 }
 
 export function buildNCMAnalysisData(rows: NCMExcelRow[]) {
-  const headers = ["NCM", "NCM Econet", "Descrição", "PIS Cumulativo", "COFINS Cumulativo", "PIS Não Cumulativo", "COFINS Não Cumulativo", "Regime", "Legislação"];
+  const headers = getDynamicHeaders(rows as unknown as ReportRow[]);
   const data = rows.map(r => headers.map(h => r[h] ?? ""));
   return { title: "Análise Detalhada de NCMs", headers, data };
 }
@@ -131,40 +136,64 @@ function generatePdf(
     doc.pipe(stream);
 
     const pageW = doc.page.width - 80;
-    const colW = Math.floor(pageW / headers.length);
+    const rowH = 18;
+    const headerBlockH = 36;
+    const tableTop = 90;
+    const chunkSize = headers.length > 12 ? 8 : headers.length;
+    const columnChunks: number[][] = [];
+    for (let i = 0; i < headers.length; i += chunkSize) {
+      columnChunks.push(Array.from({ length: Math.min(chunkSize, headers.length - i) }, (_, j) => i + j));
+    }
 
-    // Header block
-    doc.rect(40, 40, pageW, 36).fill("#1E40AF");
-    doc.fillColor("white").fontSize(14).font("Helvetica-Bold")
-      .text(reportName, 48, 50, { width: pageW - 16 });
-    doc.fillColor("#93C5FD").fontSize(8).font("Helvetica")
-      .text(`Gerado em: ${new Date().toLocaleString("pt-BR")}${extraInfo ? " | " + extraInfo : ""}`, 48, 66);
-
-    let y = 90;
-
-    const drawRow = (cells: (string | number)[], isHeader = false, isAlt = false) => {
-      if (y > doc.page.height - 60) {
-        doc.addPage({ size: "A4", layout: "landscape" });
-        y = 40;
-      }
-      const rowH = 18;
-      if (isHeader) {
-        doc.rect(40, y, pageW, rowH).fill("#3B82F6");
-      } else if (isAlt) {
-        doc.rect(40, y, pageW, rowH).fill("#F0F9FF");
-      }
-      cells.forEach((cell, i) => {
-        const x = 40 + i * colW;
-        doc.fillColor(isHeader ? "white" : "#111827")
-          .fontSize(isHeader ? 8 : 7.5)
-          .font(isHeader ? "Helvetica-Bold" : "Helvetica")
-          .text(String(cell ?? ""), x + 4, y + 5, { width: colW - 8, lineBreak: false, ellipsis: true });
-      });
-      y += rowH;
+    const drawHeaderBlock = (chunkLabel?: string) => {
+      doc.rect(40, 40, pageW, headerBlockH).fill("#1E40AF");
+      doc.fillColor("white").fontSize(14).font("Helvetica-Bold")
+        .text(reportName, 48, 50, { width: pageW - 16 });
+      doc.fillColor("#93C5FD").fontSize(8).font("Helvetica")
+        .text(
+          `Gerado em: ${new Date().toLocaleString("pt-BR")}${extraInfo ? " | " + extraInfo : ""}${chunkLabel ? ` | ${chunkLabel}` : ""}`,
+          48,
+          66
+        );
     };
 
-    drawRow(headers, true);
-    data.forEach((row, i) => drawRow(row, false, i % 2 === 0));
+    const drawChunk = (chunkIndexes: number[], chunkIndex: number) => {
+      if (chunkIndex > 0) doc.addPage({ size: "A4", layout: "landscape" });
+      drawHeaderBlock(headers.length > chunkSize ? `Parte ${chunkIndex + 1} de ${columnChunks.length}` : undefined);
+
+      const visibleHeaders = chunkIndexes.map(idx => headers[idx]);
+      const colW = Math.floor(pageW / visibleHeaders.length);
+      let y = tableTop;
+
+      const drawRow = (cells: (string | number)[], isHeader = false, isAlt = false) => {
+        if (y > doc.page.height - 60) {
+          doc.addPage({ size: "A4", layout: "landscape" });
+          drawHeaderBlock(headers.length > chunkSize ? `Parte ${chunkIndex + 1} de ${columnChunks.length}` : undefined);
+          y = tableTop;
+        }
+        if (isHeader) {
+          doc.rect(40, y, pageW, rowH).fill("#3B82F6");
+        } else if (isAlt) {
+          doc.rect(40, y, pageW, rowH).fill("#F0F9FF");
+        }
+        cells.forEach((cell, i) => {
+          const x = 40 + i * colW;
+          doc.fillColor(isHeader ? "white" : "#111827")
+            .fontSize(isHeader ? 8 : 7.5)
+            .font(isHeader ? "Helvetica-Bold" : "Helvetica")
+            .text(String(cell ?? ""), x + 4, y + 5, { width: colW - 8, lineBreak: false, ellipsis: true });
+        });
+        y += rowH;
+      };
+
+      drawRow(visibleHeaders, true);
+      data.forEach((row, i) => {
+        const chunkRow = chunkIndexes.map(idx => row[idx] ?? "");
+        drawRow(chunkRow, false, i % 2 === 0);
+      });
+    };
+
+    columnChunks.forEach((chunkIndexes, chunkIndex) => drawChunk(chunkIndexes, chunkIndex));
 
     // Footer
     const range = doc.bufferedPageRange();
