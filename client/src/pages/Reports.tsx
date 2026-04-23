@@ -45,6 +45,11 @@ interface Report {
   downloaded_by: string | null;
 }
 
+interface ReportsResponse {
+  reports: Report[];
+  totalDownloads: number;
+}
+
 interface PreviewData {
   reportName: string;
   title: string;
@@ -108,14 +113,16 @@ export default function Reports() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: reports = [] } = useQuery<Report[]>({
+  const { data: reportsData } = useQuery<ReportsResponse>({
     queryKey: ["/api/reports"],
     queryFn: async () => {
       const res = await fetch("/api/reports", { credentials: "include" });
-      return res.ok ? res.json() : [];
+      return res.ok ? res.json() : { reports: [], totalDownloads: 0 };
     },
     refetchInterval: generatingId ? 2000 : false,
   });
+
+  const reports = reportsData?.reports ?? [];
 
   const { data: stats } = useQuery({
     queryKey: ["/api/dashboard/stats"],
@@ -173,7 +180,7 @@ export default function Reports() {
 
   const completed = reports.filter(r => r.status === "completed").length;
   const pending = reports.filter(r => r.status === "pending").length;
-  const totalDownloads = reports.reduce((sum, r) => sum + (r.download_count ?? 0), 0);
+  const totalDownloads = reportsData?.totalDownloads ?? reports.reduce((sum, r) => sum + (r.download_count ?? 0), 0);
 
   const filtered = reports.filter(r => {
     const matchType = !typeFilter || typeFilter === "all" || r.type === typeFilter;

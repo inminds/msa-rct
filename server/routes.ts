@@ -377,9 +377,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/reports", isAuthenticated, async (_req, res) => {
     const Database = (await import("better-sqlite3")).default;
     const sqliteDb = new Database(".data/dev.db");
-    const rows = sqliteDb.prepare("SELECT * FROM reports ORDER BY created_at DESC").all();
+    const rows = sqliteDb.prepare("SELECT * FROM reports ORDER BY created_at DESC").all() as any[];
+    const totalDownloadsRow = sqliteDb.prepare(
+      "SELECT COALESCE(SUM(CASE WHEN download_count IS NULL THEN 0 ELSE download_count END), 0) AS total FROM reports"
+    ).get() as { total?: number | string } | undefined;
     sqliteDb.close();
-    res.json(rows);
+
+    res.json({
+      reports: rows.map((report) => ({
+        ...report,
+        download_count: Number(report.download_count ?? 0),
+      })),
+      totalDownloads: Number(totalDownloadsRow?.total ?? 0),
+    });
   });
 
   // GET /api/reports/:id/download
