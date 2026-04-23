@@ -37,9 +37,9 @@ function Router() {
 
   return (
     <Switch>
-      {/* Rota pública */}
+      {/* Rota pública — landing page para não logados, dashboard para logados */}
       <Route path="/">
-        {isLoading ? null : isAuthenticated ? <Redirect to="/app" /> : <Redirect to="/login" />}
+        {isLoading ? null : isAuthenticated ? <Redirect to="/app" /> : <Landing />}
       </Route>
 
       {/* Login */}
