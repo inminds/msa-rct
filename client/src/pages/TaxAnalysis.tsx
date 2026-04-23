@@ -295,7 +295,7 @@ export default function TaxAnalysis() {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredAnalyses?.map((analysis: any) => {
-                      const totalRate = analysis.tributes?.reduce((sum: number, t: any) => sum + (t.rate || 0), 0) || 0;
+                      const totalRate = analysis.tributes?.reduce((sum: number, t: any) => sum + (parseFloat(String(t.rate).replace(",", ".")) || 0), 0) ?? 0;
                       return (
                         <tr key={analysis.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap">
