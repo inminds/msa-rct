@@ -1,6 +1,7 @@
 import * as schema from "@shared/schema";
 import { createRequire } from "module";
-import { Pool } from 'pg';
+import pg from 'pg';
+const { Pool } = pg;
 import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
 import fs from 'fs';
 
