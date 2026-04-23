@@ -16,6 +16,9 @@ import path from "path";
 import { readNCMsFromExcel, addNCMsToExcel, PYTHON } from "./services/excelService";
 import { applySchedule, cancelSchedule } from "./services/schedulerService";
 import { setActivePid, getActivePid } from "./services/scanState";
+import { generateReportFile, getPreviewData, type ReportType, type ReportFormat } from "./services/reportService";
+import { randomUUID } from "crypto";
+import fs from "fs";
 
 const INTERNAL_API_KEY = process.env.NODE_API_KEY ?? "dev-internal-key";
 
@@ -331,6 +334,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error fetching jurisdiction distribution:", error);
       res.status(500).json({ message: "Failed to fetch jurisdiction distribution" });
     }
+  });
+
+  // ── Reports ──────────────────────────────────────────────────────────────
+
+  // POST /api/reports/generate
+  app.post("/api/reports/generate", isAuthenticated, async (req: any, res) => {
+    const { type, format, name } = req.body as { type: ReportType; format: ReportFormat; name: string };
+    if (!type || !format || !name) return res.status(400).json({ message: "type, format e name são obrigatórios" });
+
+    const id = randomUUID();
+    const userId = (req.user as any)?.id ?? (req.user as any)?.claims?.sub ?? "unknown";
+
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteDb = new Database(".data/dev.db");
+    sqliteDb.prepare(
+      "INSERT INTO reports (id, name, type, format, status, created_by) VALUES (?, ?, ?, ?, 'pending', ?)"
+    ).run(id, name, type, format, userId);
+    sqliteDb.close();
+
+    res.json({ id, status: "pending" });
+
+    // Generate async
+    (async () => {
+      const db2 = new (await import("better-sqlite3")).default(".data/dev.db");
+      try {
+        const [excelRows, changes] = await Promise.all([
+          readNCMsFromExcel().catch(() => []),
+          Promise.resolve(db2.prepare("SELECT * FROM ncm_changes ORDER BY scan_date DESC").all()),
+        ]);
+        const filePath = await generateReportFile(id, name, type, format, excelRows as any, changes);
+        db2.prepare("UPDATE reports SET status='completed', file_path=? WHERE id=?").run(filePath, id);
+      } catch (err: any) {
+        db2.prepare("UPDATE reports SET status='error', error_message=? WHERE id=?").run(err.message, id);
+      } finally {
+        db2.close();
+      }
+    })();
+  });
+
+  // GET /api/reports
+  app.get("/api/reports", isAuthenticated, async (_req, res) => {
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteDb = new Database(".data/dev.db");
+    const rows = sqliteDb.prepare("SELECT * FROM reports ORDER BY created_at DESC").all();
+    sqliteDb.close();
+    res.json(rows);
+  });
+
+  // GET /api/reports/:id/download
+  app.get("/api/reports/:id/download", isAuthenticated, async (req, res) => {
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteDb = new Database(".data/dev.db");
+    const report = sqliteDb.prepare("SELECT * FROM reports WHERE id=?").get(req.params.id) as any;
+    sqliteDb.close();
+    if (!report || report.status !== "completed" || !report.file_path) {
+      return res.status(404).json({ message: "Arquivo não disponível" });
+    }
+    if (!fs.existsSync(report.file_path)) return res.status(404).json({ message: "Arquivo não encontrado no servidor" });
+    const ext = report.format === "xlsx" ? "xlsx" : "pdf";
+    const safeName = report.name.replace(/[^a-zA-Z0-9\-_]/g, "_");
+    res.download(report.file_path, `${safeName}.${ext}`);
+  });
+
+  // GET /api/reports/:id/preview
+  app.get("/api/reports/:id/preview", isAuthenticated, async (req, res) => {
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteDb = new Database(".data/dev.db");
+    const report = sqliteDb.prepare("SELECT * FROM reports WHERE id=?").get(req.params.id) as any;
+    const changes = sqliteDb.prepare("SELECT * FROM ncm_changes ORDER BY scan_date DESC").all();
+    sqliteDb.close();
+    if (!report) return res.status(404).json({ message: "Relatório não encontrado" });
+    const excelRows = await readNCMsFromExcel().catch(() => []);
+    const preview = getPreviewData(report.type as ReportType, excelRows as any, changes);
+    res.json({ ...preview, reportName: report.name, format: report.format, status: report.status });
+  });
+
+  // GET /api/reports/preview-template?type=... (preview sem gerar arquivo)
+  app.get("/api/reports/preview-template", isAuthenticated, async (req, res) => {
+    const type = req.query.type as ReportType;
+    if (!type) return res.status(400).json({ message: "type obrigatório" });
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteDb = new Database(".data/dev.db");
+    const changes = sqliteDb.prepare("SELECT * FROM ncm_changes ORDER BY scan_date DESC").all();
+    sqliteDb.close();
+    const excelRows = await readNCMsFromExcel().catch(() => []);
+    const preview = getPreviewData(type, excelRows as any, changes);
+    const names: Record<string, string> = {
+      "tax-summary": "Resumo Tributário",
+      "ncm-analysis": "Análise Detalhada de NCMs",
+      "trend-analysis": "Análise de Tendências",
+    };
+    res.json({ ...preview, reportName: names[type] ?? type });
+  });
+
+  // GET /api/reports/:id/status (polling)
+  app.get("/api/reports/:id/status", isAuthenticated, async (req, res) => {
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteDb = new Database(".data/dev.db");
+    const report = sqliteDb.prepare("SELECT id, status, error_message FROM reports WHERE id=?").get(req.params.id) as any;
+    sqliteDb.close();
+    if (!report) return res.status(404).json({ message: "Não encontrado" });
+    res.json(report);
   });
 
   // File upload

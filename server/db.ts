@@ -99,6 +99,17 @@ if (isDev) {
       scan_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       resolved_at TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS reports (
+      id VARCHAR PRIMARY KEY,
+      name TEXT NOT NULL,
+      type VARCHAR NOT NULL,
+      format VARCHAR NOT NULL,
+      status VARCHAR NOT NULL DEFAULT 'pending',
+      file_path TEXT,
+      created_by VARCHAR,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      error_message TEXT
+    );
     CREATE TABLE IF NOT EXISTS scan_schedule (
       id INTEGER PRIMARY KEY,
       enabled INTEGER NOT NULL DEFAULT 0,
