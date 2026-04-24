@@ -319,7 +319,7 @@ export default function TaxAnalysis() {
                                   key={tribute.id}
                                   className={`${getTaxColor(tribute.type)} bg-opacity-20 text-gray-800`}
                                 >
-                                  {tribute.type} {tribute.rate}%
+                                  {tribute.type} {String(tribute.rate).replace(/%$/, "")}%
                                 </Badge>
                               ))}
                             </div>
