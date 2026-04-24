@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search, RefreshCw, ScanSearch, ScanLine, Loader2, X,
   CheckCircle2, CalendarClock, Clock, XCircle, CheckCheck, AlertCircle, Send, Eye,
+  History, ShieldCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ScheduleModal } from "@/components/ScheduleModal";
@@ -29,6 +30,17 @@ interface NCMRow {
   "Regime": string;
   "Legislação": string;
   [key: string]: string;
+}
+
+interface NCMChange {
+  id: number;
+  ncm: string;
+  field: string;
+  oldValue: string;
+  newValue: string;
+  status: "pending" | "accepted" | "rejected";
+  scanDate: string;
+  resolvedAt: string | null;
 }
 
 interface ScanRequest {
@@ -116,6 +128,20 @@ export default function NCMAnalysis() {
   // Dados completos (todas as colunas do Excel) — usados apenas no modal de detalhe
   const { data: ncmRowsFull } = useQuery<Record<string, string>[]>({
     queryKey: ["/api/ncm-excel-full"],
+  });
+
+  // Histórico de mudanças do NCM selecionado
+  const { data: ncmHistory = [] } = useQuery<NCMChange[]>({
+    queryKey: ["/api/ncm-changes", "all", selectedNCM?.NCM],
+    queryFn: async () => {
+      if (!selectedNCM) return [];
+      const res = await fetch(
+        `/api/ncm-changes?status=all&ncm=${encodeURIComponent(selectedNCM.NCM)}`,
+        { credentials: "include" }
+      );
+      return res.json();
+    },
+    enabled: !!selectedNCM,
   });
 
   // Pedido mais recente do USER logado (só para não-admins)
@@ -618,12 +644,19 @@ export default function NCMAnalysis() {
       <Dialog open={!!selectedNCM} onOpenChange={() => setSelectedNCM(null)}>
         <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="flex items-center gap-2 flex-wrap">
               <span className="font-mono">{selectedNCM?.NCM}</span>
               {selectedNCM && isPreenchido(selectedNCM) ? (
                 <Badge className="bg-green-100 text-green-800 text-xs">Preenchido</Badge>
               ) : (
                 <Badge className="bg-amber-100 text-amber-800 text-xs">Pendente</Badge>
+              )}
+              {ncmHistory.length > 0 && (
+                <span className="flex items-center gap-1 text-xs font-normal text-gray-500 ml-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
+                  Última alteração detectada:{" "}
+                  {new Date(ncmHistory[0].scanDate).toLocaleString("pt-BR")}
+                </span>
               )}
             </DialogTitle>
           </DialogHeader>
@@ -756,6 +789,20 @@ export default function NCMAnalysis() {
                         Suspensão
                       </TabsTrigger>
                     )}
+                    <TabsTrigger
+                      value="historico"
+                      className="rounded-none px-4 py-2 text-sm font-medium border-b-2 border-transparent
+                        data-[state=active]:border-blue-600 data-[state=active]:text-blue-700
+                        data-[state=inactive]:text-gray-500 bg-transparent shadow-none flex items-center gap-1.5"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      Histórico
+                      {ncmHistory.length > 0 && (
+                        <span className="ml-1 rounded-full bg-blue-100 text-blue-700 text-xs px-1.5 py-0.5 font-semibold leading-none">
+                          {ncmHistory.length}
+                        </span>
+                      )}
+                    </TabsTrigger>
                   </TabsList>
 
                   {/* ── Regra Geral ── */}
@@ -959,6 +1006,61 @@ export default function NCMAnalysis() {
                       })()}
                     </TabsContent>
                   )}
+                  {/* ── Histórico ── */}
+                  <TabsContent value="historico" className="mt-0">
+                    {ncmHistory.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 gap-3 text-gray-400">
+                        <History className="w-10 h-10 text-gray-200" />
+                        <p className="text-sm font-medium text-gray-500">Nenhuma mudança registrada</p>
+                        <p className="text-xs text-center">As mudanças aparecem aqui após a varredura automática detectar alterações neste NCM.</p>
+                      </div>
+                    ) : (
+                      <table className="w-full text-sm border-collapse border border-gray-200">
+                        <thead>
+                          <tr className="bg-blue-600 text-white">
+                            <th className="px-3 py-2 text-left font-medium border border-blue-500">Campo</th>
+                            <th className="px-3 py-2 text-left font-medium border border-blue-500">Valor Anterior</th>
+                            <th className="px-3 py-2 text-left font-medium border border-blue-500">Valor Novo</th>
+                            <th className="px-3 py-2 text-left font-medium border border-blue-500">Detectado em</th>
+                            <th className="px-3 py-2 text-left font-medium border border-blue-500">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ncmHistory.map((change, i) => (
+                            <tr key={change.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                              <td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">{change.field}</td>
+                              <td className="px-3 py-2 border border-gray-200">
+                                <span className="line-through text-red-500">{change.oldValue || "—"}</span>
+                              </td>
+                              <td className="px-3 py-2 border border-gray-200">
+                                <span className="font-medium text-green-700">{change.newValue || "—"}</span>
+                              </td>
+                              <td className="px-3 py-2 border border-gray-200 text-gray-500 whitespace-nowrap text-xs">
+                                {new Date(change.scanDate).toLocaleString("pt-BR")}
+                              </td>
+                              <td className="px-3 py-2 border border-gray-200 whitespace-nowrap">
+                                {change.status === "pending" && (
+                                  <Badge className="bg-yellow-100 text-yellow-800 text-xs">
+                                    <Clock className="w-3 h-3 mr-1" />Pendente
+                                  </Badge>
+                                )}
+                                {change.status === "accepted" && (
+                                  <Badge className="bg-green-100 text-green-800 text-xs">
+                                    <CheckCircle2 className="w-3 h-3 mr-1" />Aceita
+                                  </Badge>
+                                )}
+                                {change.status === "rejected" && (
+                                  <Badge className="bg-red-100 text-red-800 text-xs">
+                                    <XCircle className="w-3 h-3 mr-1" />Rejeitada
+                                  </Badge>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </TabsContent>
                 </Tabs>
               </div>
             );

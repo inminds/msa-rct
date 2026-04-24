@@ -1263,13 +1263,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ─────────────────────────────────────────────────────────────────────────
   // NCM Changes endpoints (detecção de mudanças pela varredura agendada)
 
-  // GET /api/ncm-changes?status=pending|accepted|rejected|all
+  // GET /api/ncm-changes?status=pending|accepted|rejected|all[&ncm=<code>]
   app.get("/api/ncm-changes", isAuthenticated, async (req, res) => {
     try {
       const status = (req.query.status as string) || "pending";
-      const rows = status === "all"
-        ? await rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC") as any[]
-        : await rawAll("SELECT * FROM ncm_changes WHERE status = ? ORDER BY scan_date DESC", [status]) as any[];
+      const ncmFilter = (req.query.ncm as string) || null;
+
+      let rows: any[];
+      if (ncmFilter) {
+        rows = status === "all"
+          ? await rawAll("SELECT * FROM ncm_changes WHERE ncm = ? ORDER BY scan_date DESC", [ncmFilter]) as any[]
+          : await rawAll("SELECT * FROM ncm_changes WHERE ncm = ? AND status = ? ORDER BY scan_date DESC", [ncmFilter, status]) as any[];
+      } else {
+        rows = status === "all"
+          ? await rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC") as any[]
+          : await rawAll("SELECT * FROM ncm_changes WHERE status = ? ORDER BY scan_date DESC", [status]) as any[];
+      }
+
       res.json(rows.map(r => ({
         id: r.id, ncm: r.ncm, field: r.field,
         oldValue: r.old_value, newValue: r.new_value,
