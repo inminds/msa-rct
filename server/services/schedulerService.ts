@@ -22,7 +22,7 @@ function isPreenchido(row: Record<string, string>): boolean {
   return !!(row["PIS Cumulativo"] || row["PIS Não Cumulativo"]);
 }
 
-async function detectAndSaveChanges(
+export async function detectAndSaveChanges(
   before: Record<string, string>[],
   after: Record<string, string>[]
 ) {

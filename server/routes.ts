@@ -14,7 +14,7 @@ import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 import path from "path";
 import { readNCMsFromExcel, readNCMsFromExcelFull, readHistoricoFromExcel, addNCMsToExcel, PYTHON } from "./services/excelService";
-import { applySchedule, cancelSchedule } from "./services/schedulerService";
+import { applySchedule, cancelSchedule, detectAndSaveChanges } from "./services/schedulerService";
 import { setActivePid, getActivePid } from "./services/scanState";
 import { generateReportFile, getPreviewData, type ReportType, type ReportFormat } from "./services/reportService";
 import { rawGet, rawAll, rawRun } from "./rawDb.js";
@@ -935,6 +935,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
       const logFd = fs.openSync(path.join(logDir, "scraper.log"), "a");
 
+      // Snapshot before scan (for change detection)
+      let snapshot: Record<string, string>[] = [];
+      try { snapshot = await readNCMsFromExcel(); } catch {}
+
       const child = spawn(PYTHON, args, {
         cwd: path.resolve("."),
         env: { ...process.env, PYTHONUNBUFFERED: "1" },
@@ -942,9 +946,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stdio: ["ignore", logFd, logFd],
       });
 
-      child.on("close", (code) => {
+      child.on("close", async (code) => {
         try { fs.closeSync(logFd); } catch {}
+        setActivePid(null);
         console.log(`[ncm-scan] scraper exited (code: ${code})`);
+        if (snapshot.length > 0) {
+          try {
+            const after = await readNCMsFromExcel();
+            await detectAndSaveChanges(snapshot, after);
+          } catch (err) {
+            console.error("[ncm-scan] Erro ao detectar mudanças:", err);
+          }
+        }
       });
 
       child.unref();
