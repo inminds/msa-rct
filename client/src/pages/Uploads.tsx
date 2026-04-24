@@ -6,7 +6,7 @@ import { UploadModal } from "@/components/UploadModal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Eye, Download, AlertCircle } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 
 export default function Uploads() {
@@ -112,9 +112,6 @@ export default function Uploads() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Descrição
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Ações
-                        </th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -154,26 +151,6 @@ export default function Uploads() {
                             <span className="text-sm text-gray-900" data-testid={`description-${upload.id}`}>
                               {upload.description || "-"}
                             </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <div className="flex space-x-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                data-testid={`button-view-${upload.id}`}
-                              >
-                                <Eye className="w-4 h-4" />
-                              </Button>
-                              {upload.status === "COMPLETED" && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  data-testid={`button-download-${upload.id}`}
-                                >
-                                  <Download className="w-4 h-4" />
-                                </Button>
-                              )}
-                            </div>
                           </td>
                         </tr>
                       ))}

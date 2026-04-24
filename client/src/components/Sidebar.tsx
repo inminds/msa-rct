@@ -7,7 +7,6 @@ import {
   List,
   FileText,
   Users,
-  Bot,
   User,
   LogOut,
   GitCompareArrows,
@@ -22,7 +21,6 @@ const navigation = [
   { name: "Análise Tributária", href: "/tax-analysis", icon: FileText },
   { name: "Relatórios", href: "/reports", icon: BarChart3 },
   { name: "Usuários", href: "/users", icon: Users },
-  { name: "RPA Legislação", href: "/rpa", icon: Bot },
   { name: "Mudanças em NCMs", href: "/rpa-dashboard", icon: GitCompareArrows },
 ];
 

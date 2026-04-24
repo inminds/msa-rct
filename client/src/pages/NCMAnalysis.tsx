@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Search, Filter, RefreshCw, ScanSearch, ScanLine, Loader2, X,
+  Search, RefreshCw, ScanSearch, ScanLine, Loader2, X,
   CheckCircle2, CalendarClock, Clock, XCircle, CheckCheck, AlertCircle, Send,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -266,11 +266,14 @@ export default function NCMAnalysis() {
   const hasActiveRequest = !isAdmin && (myRequest?.status === "pending_thayssa" || myRequest?.status === "pending_yuri");
 
   const filtered = ncmRows?.filter((row) => {
+    const term = searchTerm.trim().toLowerCase();
     const matchesSearch =
-      !searchTerm ||
-      row.NCM.includes(searchTerm) ||
-      row["NCM Econet"].includes(searchTerm) ||
-      row["Descrição"].toLowerCase().includes(searchTerm.toLowerCase());
+      !term ||
+      row.NCM.includes(term) ||
+      (row["NCM Econet"] ?? "").toLowerCase().includes(term) ||
+      (row["Descrição"] ?? "").toLowerCase().includes(term) ||
+      (row["Regime"] ?? "").toLowerCase().includes(term) ||
+      (row["Legislação"] ?? "").toLowerCase().includes(term);
     const preenchido = isPreenchido(row);
     const matchesStatus =
       !statusFilter || statusFilter === "all" ||
@@ -429,11 +432,7 @@ export default function NCMAnalysis() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button variant="outline">
-                  <Filter className="w-4 h-4 mr-2" />
-                  Filtros Avançados
-                </Button>
-                <Button variant="outline" onClick={() => refetch()}>
+                <Button variant="outline" onClick={() => { refetch(); queryClient.invalidateQueries({ queryKey: ["/api/ncm-excel"] }); }}>
                   <RefreshCw className="w-4 h-4 mr-2" />
                   Atualizar
                 </Button>

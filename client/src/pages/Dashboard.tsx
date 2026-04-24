@@ -12,9 +12,7 @@ import {
   BarChart3,
   Clock,
   TrendingUp,
-  Download,
   Eye,
-  Edit,
   Bot,
   RefreshCw,
   Bell,
@@ -382,12 +380,6 @@ export default function Dashboard() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex space-x-2">
-                            <Button variant="ghost" size="sm" data-testid={`button-edit-${analysis.id}`}>
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm" data-testid={`button-export-${analysis.id}`}>
-                              <Download className="w-4 h-4" />
-                            </Button>
                             <Button variant="ghost" size="sm" data-testid={`button-view-${analysis.id}`}>
                               <Eye className="w-4 h-4" />
                             </Button>

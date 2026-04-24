@@ -18,7 +18,6 @@ import { useToast } from "@/hooks/use-toast";
 import {
   FileText,
   Download,
-  Filter,
   Eye,
   BarChart3,
   PieChart,
@@ -323,10 +322,6 @@ export default function Reports() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button variant="outline">
-                  <Filter className="w-4 h-4 mr-2" />
-                  Filtros
-                </Button>
               </div>
             </CardContent>
           </Card>

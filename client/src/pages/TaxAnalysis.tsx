@@ -8,15 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { 
-  Calculator, 
-  TrendingUp, 
-  TrendingDown, 
+import {
+  Calculator,
+  TrendingUp,
+  TrendingDown,
   Equal,
-  Filter,
   Search,
-  Download,
-  Eye,
   AlertTriangle
 } from "lucide-react";
 
@@ -254,10 +251,6 @@ export default function TaxAnalysis() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button variant="outline" data-testid="button-export-analysis">
-                  <Download className="w-4 h-4 mr-2" />
-                  Exportar
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -291,9 +284,6 @@ export default function TaxAnalysis() {
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Competência
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Ações
                       </th>
                     </tr>
                   </thead>
@@ -330,24 +320,7 @@ export default function TaxAnalysis() {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex flex-col gap-1">
-                              {analysis.tributes?.some((t: any) => t.jurisdiction === "FEDERAL") && (
-                                <Badge className="bg-green-100 text-green-800 text-xs">Federal</Badge>
-                              )}
-                              {analysis.tributes?.some((t: any) => t.jurisdiction === "ESTADUAL") && (
-                                <Badge className="bg-purple-100 text-purple-800 text-xs">Estadual</Badge>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <div className="flex space-x-2">
-                              <Button variant="ghost" size="sm">
-                                <Eye className="w-4 h-4" />
-                              </Button>
-                              <Button variant="ghost" size="sm">
-                                <Download className="w-4 h-4" />
-                              </Button>
-                            </div>
+                            <Badge className="bg-green-100 text-green-800 text-xs">Federal</Badge>
                           </td>
                         </tr>
                       );

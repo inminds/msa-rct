@@ -28,7 +28,7 @@ function StatusBadge({ status }: { status: NCMChange["status"] }) {
 }
 
 export default function RPADashboard() {
-  const [statusFilter, setStatusFilter] = useState("pending");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [acceptAllOpen, setAcceptAllOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
