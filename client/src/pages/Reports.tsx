@@ -78,7 +78,7 @@ const REPORT_TEMPLATES = [
   {
     id: "history-report" as ReportType,
     name: "Histórico de Mudanças",
-    description: "Registro completo de todas as alterações detectadas nas alíquotas por NCM ao longo do tempo",
+    description: "Registro completo de todas as alterações detectadas nos NCMs ao longo do tempo",
     icon: History,
     color: "bg-purple-100 text-purple-800",
     disabled: false,
