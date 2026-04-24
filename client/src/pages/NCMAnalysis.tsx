@@ -8,8 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Search, RefreshCw, ScanSearch, ScanLine, Loader2, X,
-  CheckCircle2, CalendarClock, Clock, XCircle, CheckCheck, AlertCircle, Send,
+  CheckCircle2, CalendarClock, Clock, XCircle, CheckCheck, AlertCircle, Send, Eye,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ScheduleModal } from "@/components/ScheduleModal";
@@ -90,6 +93,7 @@ function RequestStatusCard({ request, onNewRequest }: { request: ScanRequest; on
 export default function NCMAnalysis() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [selectedNCM, setSelectedNCM] = useState<NCMRow | null>(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanDone, setScanDone] = useState(false);
@@ -165,6 +169,19 @@ export default function NCMAnalysis() {
     checkOnMount();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-abrir modal se URL contém ?ncm=<code> (vindo do Dashboard)
+  useEffect(() => {
+    if (!ncmRows || ncmRows.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const ncmParam = params.get("ncm");
+    if (ncmParam) {
+      const row = ncmRows.find(r => r.NCM === ncmParam || r["NCM Econet"] === ncmParam);
+      if (row) setSelectedNCM(row);
+      // Limpa o param da URL sem reload
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [ncmRows]);
 
   // Background poll: detecta varreduras agendadas ou disparadas por aprovação
   useEffect(() => {
@@ -265,15 +282,18 @@ export default function NCMAnalysis() {
 
   const hasActiveRequest = !isAdmin && (myRequest?.status === "pending_thayssa" || myRequest?.status === "pending_yuri");
 
+  const normalize = (s: string) =>
+    s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
   const filtered = ncmRows?.filter((row) => {
-    const term = searchTerm.trim().toLowerCase();
+    const term = normalize(searchTerm.trim());
     const matchesSearch =
       !term ||
       row.NCM.includes(term) ||
-      (row["NCM Econet"] ?? "").toLowerCase().includes(term) ||
-      (row["Descrição"] ?? "").toLowerCase().includes(term) ||
-      (row["Regime"] ?? "").toLowerCase().includes(term) ||
-      (row["Legislação"] ?? "").toLowerCase().includes(term);
+      normalize(row["NCM Econet"] ?? "").includes(term) ||
+      normalize(row["Descrição"] ?? "").includes(term) ||
+      normalize(row["Regime"] ?? "").includes(term) ||
+      normalize(row["Legislação"] ?? "").includes(term);
     const preenchido = isPreenchido(row);
     const matchesStatus =
       !statusFilter || statusFilter === "all" ||
@@ -432,7 +452,7 @@ export default function NCMAnalysis() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button variant="outline" onClick={() => { refetch(); queryClient.invalidateQueries({ queryKey: ["/api/ncm-excel"] }); }}>
+                <Button variant="outline" onClick={() => window.location.reload()}>
                   <RefreshCw className="w-4 h-4 mr-2" />
                   Atualizar
                 </Button>
@@ -522,13 +542,14 @@ export default function NCMAnalysis() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">COFINS N.Cum.</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Regime</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filtered?.map((row, idx) => {
                       const preenchido = isPreenchido(row);
                       return (
-                        <tr key={row.NCM || idx} className="hover:bg-gray-50">
+                        <tr key={idx} className="hover:bg-gray-50">
                           <td className="px-4 py-4 whitespace-nowrap">
                             <div className="font-mono text-sm font-medium text-gray-900">{row.NCM}</div>
                             {row["NCM Econet"] && row["NCM Econet"] !== row.NCM && (
@@ -562,6 +583,11 @@ export default function NCMAnalysis() {
                               <Badge className="bg-amber-100 text-amber-800">Pendente</Badge>
                             )}
                           </td>
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <Button variant="ghost" size="sm" onClick={() => setSelectedNCM(row)}>
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -581,6 +607,70 @@ export default function NCMAnalysis() {
       </main>
 
       <ScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
+
+      {/* Modal de detalhe do NCM */}
+      <Dialog open={!!selectedNCM} onOpenChange={() => setSelectedNCM(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="font-mono">{selectedNCM?.NCM}</span>
+              {selectedNCM && isPreenchido(selectedNCM) ? (
+                <Badge className="bg-green-100 text-green-800 text-xs">Preenchido</Badge>
+              ) : (
+                <Badge className="bg-amber-100 text-amber-800 text-xs">Pendente</Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedNCM && (
+            <div className="space-y-4 py-1">
+              {/* Descrição */}
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">Descrição</p>
+                <p className="text-sm text-gray-900">{selectedNCM["Descrição"] || "—"}</p>
+              </div>
+
+              {/* NCM Econet */}
+              {selectedNCM["NCM Econet"] && selectedNCM["NCM Econet"] !== selectedNCM.NCM && (
+                <div>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">NCM Econet</p>
+                  <p className="text-sm font-mono text-gray-700">{selectedNCM["NCM Econet"]}</p>
+                </div>
+              )}
+
+              {/* Alíquotas */}
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: "PIS Cumulativo", key: "PIS Cumulativo" },
+                  { label: "COFINS Cumulativo", key: "COFINS Cumulativo" },
+                  { label: "PIS Não Cumulativo", key: "PIS Não Cumulativo" },
+                  { label: "COFINS Não Cumulativo", key: "COFINS Não Cumulativo" },
+                ].map(({ label, key }) => (
+                  <div key={key} className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs font-medium text-gray-500 mb-0.5">{label}</p>
+                    <p className="text-lg font-bold text-gray-900">
+                      {selectedNCM[key] || <span className="text-gray-300 text-sm font-normal">—</span>}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Regime */}
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">Regime</p>
+                <p className="text-sm text-gray-900">{selectedNCM["Regime"] || "—"}</p>
+              </div>
+
+              {/* Legislação */}
+              {selectedNCM["Legislação"] && (
+                <div>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">Legislação</p>
+                  <p className="text-sm text-gray-700 break-words">{selectedNCM["Legislação"]}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

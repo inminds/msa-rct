@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { UploadModal } from "@/components/UploadModal";
@@ -20,6 +21,7 @@ import {
 
 export default function Dashboard() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [, setLocation] = useLocation();
 
   // Fetch dashboard data
   const { data: stats } = useQuery({
@@ -380,7 +382,12 @@ export default function Dashboard() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex space-x-2">
-                            <Button variant="ghost" size="sm" data-testid={`button-view-${analysis.id}`}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              data-testid={`button-view-${analysis.id}`}
+                              onClick={() => setLocation(`/ncm-analysis?ncm=${analysis.ncmCode}`)}
+                            >
                               <Eye className="w-4 h-4" />
                             </Button>
                           </div>
