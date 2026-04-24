@@ -610,8 +610,8 @@ export default function NCMAnalysis() {
 
       {/* Modal de detalhe do NCM */}
       <Dialog open={!!selectedNCM} onOpenChange={() => setSelectedNCM(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <span className="font-mono">{selectedNCM?.NCM}</span>
               {selectedNCM && isPreenchido(selectedNCM) ? (
@@ -621,54 +621,32 @@ export default function NCMAnalysis() {
               )}
             </DialogTitle>
           </DialogHeader>
-          {selectedNCM && (
-            <div className="space-y-4 py-1">
-              {/* Descrição */}
-              <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">Descrição</p>
-                <p className="text-sm text-gray-900">{selectedNCM["Descrição"] || "—"}</p>
+          {selectedNCM && (() => {
+            // Todas as colunas com valor, exceto NCM (já no título)
+            const entries = Object.entries(selectedNCM).filter(
+              ([key, val]) => key !== "NCM" && val !== undefined && String(val).trim() !== ""
+            );
+            return (
+              <div className="overflow-auto flex-1 mt-2">
+                <table className="w-full text-sm border-collapse">
+                  <thead className="bg-blue-600 text-white sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-medium w-1/3">Coluna</th>
+                      <th className="px-4 py-2 text-left font-medium">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries.map(([key, val], i) => (
+                      <tr key={key} className={i % 2 === 0 ? "bg-blue-50" : "bg-white"}>
+                        <td className="px-4 py-2 font-medium text-gray-600 whitespace-nowrap">{key}</td>
+                        <td className="px-4 py-2 text-gray-900 break-words">{String(val)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-
-              {/* NCM Econet */}
-              {selectedNCM["NCM Econet"] && selectedNCM["NCM Econet"] !== selectedNCM.NCM && (
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">NCM Econet</p>
-                  <p className="text-sm font-mono text-gray-700">{selectedNCM["NCM Econet"]}</p>
-                </div>
-              )}
-
-              {/* Alíquotas */}
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: "PIS Cumulativo", key: "PIS Cumulativo" },
-                  { label: "COFINS Cumulativo", key: "COFINS Cumulativo" },
-                  { label: "PIS Não Cumulativo", key: "PIS Não Cumulativo" },
-                  { label: "COFINS Não Cumulativo", key: "COFINS Não Cumulativo" },
-                ].map(({ label, key }) => (
-                  <div key={key} className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs font-medium text-gray-500 mb-0.5">{label}</p>
-                    <p className="text-lg font-bold text-gray-900">
-                      {selectedNCM[key] || <span className="text-gray-300 text-sm font-normal">—</span>}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              {/* Regime */}
-              <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">Regime</p>
-                <p className="text-sm text-gray-900">{selectedNCM["Regime"] || "—"}</p>
-              </div>
-
-              {/* Legislação */}
-              {selectedNCM["Legislação"] && (
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">Legislação</p>
-                  <p className="text-sm text-gray-700 break-words">{selectedNCM["Legislação"]}</p>
-                </div>
-              )}
-            </div>
-          )}
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
