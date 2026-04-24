@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search, RefreshCw, ScanSearch, ScanLine, Loader2, X,
   CheckCircle2, CalendarClock, Clock, XCircle, CheckCheck, AlertCircle, Send, Eye,
@@ -613,9 +614,9 @@ export default function NCMAnalysis() {
 
       <ScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
 
-      {/* Modal de detalhe do NCM */}
+      {/* Modal de detalhe do NCM — estilo Econet */}
       <Dialog open={!!selectedNCM} onOpenChange={() => setSelectedNCM(null)}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <span className="font-mono">{selectedNCM?.NCM}</span>
@@ -626,30 +627,339 @@ export default function NCMAnalysis() {
               )}
             </DialogTitle>
           </DialogHeader>
+
           {selectedNCM && (() => {
-            // Usa a linha completa (todas as colunas do Excel) se disponível
-            const fullRow = ncmRowsFull?.find(r => r["NCM"] === selectedNCM.NCM) ?? selectedNCM;
-            const entries = Object.entries(fullRow).filter(
-              ([key, val]) => key !== "NCM" && val !== undefined && String(val).trim() !== ""
+            const fullRow: Record<string, string> =
+              (ncmRowsFull?.find(r => r["NCM"] === selectedNCM.NCM) as Record<string, string> | undefined)
+              ?? (selectedNCM as unknown as Record<string, string>);
+
+            // Helper: find value by partial keyword match (all keywords, case-insensitive)
+            const get = (...keywords: string[]) => {
+              const key = Object.keys(fullRow).find(k =>
+                keywords.every(kw => k.toLowerCase().includes(kw.toLowerCase()))
+              );
+              return key ? String(fullRow[key] ?? "").trim() : "";
+            };
+
+            // Detect ZFM / Suspensão data
+            const zfmKeys = Object.keys(fullRow).filter(k =>
+              k.toLowerCase().includes("zfm") || k.toLowerCase().includes("zona franca")
             );
-            return (
-              <div className="overflow-auto flex-1 mt-2">
-                <table className="w-full text-sm border-collapse">
-                  <thead className="bg-blue-600 text-white sticky top-0">
-                    <tr>
-                      <th className="px-4 py-2 text-left font-medium w-1/3">Coluna</th>
-                      <th className="px-4 py-2 text-left font-medium">Valor</th>
+            const zfmHasData = zfmKeys.some(k => String(fullRow[k] ?? "").trim() !== "");
+
+            const suspKeys = Object.keys(fullRow).filter(k =>
+              k.toLowerCase().includes("suspens")
+            );
+            const suspHasData = suspKeys.some(k => String(fullRow[k] ?? "").trim() !== "");
+
+            // Regra Geral alíquota rows
+            const regime = fullRow["Regime"] ?? "";
+            const legislacao = fullRow["Legislação"] ?? "";
+            const pisCum = fullRow["PIS Cumulativo"] ?? "";
+            const cofinsCum = fullRow["COFINS Cumulativo"] ?? "";
+            const pisNaoCum = fullRow["PIS Não Cumulativo"] ?? "";
+            const cofinsNaoCum = fullRow["COFINS Não Cumulativo"] ?? "";
+
+            type AliqRow = { regime: string; pis: string; cofins: string; leg: string };
+            const aliqRows: AliqRow[] = [];
+            if (pisCum || cofinsCum)
+              aliqRows.push({ regime: "Cumulativo", pis: pisCum, cofins: cofinsCum, leg: legislacao });
+            if (pisNaoCum || cofinsNaoCum)
+              aliqRows.push({ regime: "Não Cumulativo", pis: pisNaoCum, cofins: cofinsNaoCum, leg: legislacao });
+            // Monofásico fallback
+            if (aliqRows.length === 0 && regime) {
+              const pis = get("pis") || "";
+              const cofins = get("cofins") || "";
+              aliqRows.push({ regime, pis, cofins, leg: legislacao });
+            }
+
+            // ZFM alíquota rows
+            const zfmAliqRows: AliqRow[] = [];
+            if (zfmHasData) {
+              const pCZ = get("pis", "cumulativo", "zfm") || get("zfm", "pis", "cum");
+              const cCZ = get("cofins", "cumulativo", "zfm") || get("zfm", "cofins", "cum");
+              const pNZ = get("pis", "não", "zfm") || get("zfm", "pis", "nao");
+              const cNZ = get("cofins", "não", "zfm") || get("zfm", "cofins", "nao");
+              const lZ  = get("legislação", "zfm") || get("zfm", "leg");
+              if (pCZ || cCZ) zfmAliqRows.push({ regime: "Cumulativo", pis: pCZ, cofins: cCZ, leg: lZ });
+              if (pNZ || cNZ) zfmAliqRows.push({ regime: "Não Cumulativo", pis: pNZ, cofins: cNZ, leg: lZ });
+              if (zfmAliqRows.length === 0) {
+                // generic fallback: first non-empty ZFM key as a single row
+                const firstKey = zfmKeys.find(k => String(fullRow[k] ?? "").trim() !== "");
+                if (firstKey) zfmAliqRows.push({ regime: "ZFM", pis: fullRow[firstKey] ?? "", cofins: "", leg: "" });
+              }
+            }
+
+            const observacoes =
+              fullRow["Observações"] ?? fullRow["Observacoes"] ?? get("observa");
+
+            // Inner component for alíquota table
+            const AliqTable = ({ rows }: { rows: AliqRow[] }) => (
+              <table className="w-full text-sm border-collapse border border-gray-200 rounded overflow-hidden">
+                <thead>
+                  <tr className="bg-blue-600 text-white">
+                    <th className="px-3 py-2 text-left font-medium border border-blue-500">Regime</th>
+                    <th className="px-3 py-2 text-center font-medium border border-blue-500 w-24">PIS</th>
+                    <th className="px-3 py-2 text-center font-medium border border-blue-500 w-24">COFINS</th>
+                    <th className="px-3 py-2 text-left font-medium border border-blue-500">Dispositivo Legal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length > 0 ? rows.map((r, i) => (
+                    <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                      <td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">{r.regime || "—"}</td>
+                      <td className="px-3 py-2 border border-gray-200 text-center text-green-700 font-semibold">{r.pis || "—"}</td>
+                      <td className="px-3 py-2 border border-gray-200 text-center text-green-700 font-semibold">{r.cofins || "—"}</td>
+                      <td className="px-3 py-2 border border-gray-200 text-gray-600 text-xs">{r.leg || "—"}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map(([key, val], i) => (
-                      <tr key={key} className={i % 2 === 0 ? "bg-blue-50" : "bg-white"}>
-                        <td className="px-4 py-2 font-medium text-gray-600 whitespace-nowrap">{key}</td>
-                        <td className="px-4 py-2 text-gray-900 break-words">{String(val)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                  )) : (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-4 text-center text-gray-400 italic">
+                        Sem dados disponíveis
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            );
+
+            return (
+              <div className="overflow-auto flex-1 mt-1">
+                <Tabs defaultValue="regra-geral">
+                  {/* Tab bar */}
+                  <TabsList className="w-full justify-start border-b border-gray-200 rounded-none bg-transparent p-0 h-auto mb-4 gap-0">
+                    <TabsTrigger
+                      value="regra-geral"
+                      className="rounded-none px-4 py-2 text-sm font-medium border-b-2 border-transparent
+                        data-[state=active]:border-blue-600 data-[state=active]:text-blue-700
+                        data-[state=inactive]:text-gray-500 bg-transparent shadow-none"
+                    >
+                      Regra Geral
+                    </TabsTrigger>
+                    {zfmHasData && (
+                      <TabsTrigger
+                        value="zfm"
+                        className="rounded-none px-4 py-2 text-sm font-medium border-b-2 border-transparent
+                          data-[state=active]:border-blue-600 data-[state=active]:text-blue-700
+                          data-[state=inactive]:text-gray-500 bg-transparent shadow-none"
+                      >
+                        ZFM
+                      </TabsTrigger>
+                    )}
+                    {suspHasData && (
+                      <TabsTrigger
+                        value="suspensao"
+                        className="rounded-none px-4 py-2 text-sm font-medium border-b-2 border-transparent
+                          data-[state=active]:border-blue-600 data-[state=active]:text-blue-700
+                          data-[state=inactive]:text-gray-500 bg-transparent shadow-none"
+                      >
+                        Suspensão
+                      </TabsTrigger>
+                    )}
+                  </TabsList>
+
+                  {/* ── Regra Geral ── */}
+                  <TabsContent value="regra-geral" className="space-y-5 mt-0">
+                    {/* NCM info table */}
+                    <table className="w-full text-sm border-collapse border border-gray-200">
+                      <thead>
+                        <tr className="bg-blue-600 text-white">
+                          <th className="px-3 py-2 text-left font-medium border border-blue-500 w-1/4">Campo</th>
+                          <th className="px-3 py-2 text-left font-medium border border-blue-500">Valor</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="bg-white">
+                          <td className="px-3 py-2 border border-gray-200 font-medium text-gray-600">NCM</td>
+                          <td className="px-3 py-2 border border-gray-200 font-mono text-gray-900">{selectedNCM.NCM}</td>
+                        </tr>
+                        {fullRow["NCM Econet"] && String(fullRow["NCM Econet"]).trim() !== "" && (
+                          <tr className="bg-gray-50">
+                            <td className="px-3 py-2 border border-gray-200 font-medium text-gray-600">NCM Econet</td>
+                            <td className="px-3 py-2 border border-gray-200 font-mono text-gray-900">{fullRow["NCM Econet"]}</td>
+                          </tr>
+                        )}
+                        {fullRow["Descrição"] && String(fullRow["Descrição"]).trim() !== "" && (
+                          <tr className="bg-white">
+                            <td className="px-3 py-2 border border-gray-200 font-medium text-gray-600">Descrição</td>
+                            <td className="px-3 py-2 border border-gray-200 text-gray-900">{fullRow["Descrição"]}</td>
+                          </tr>
+                        )}
+                        {regime && (
+                          <tr className="bg-gray-50">
+                            <td className="px-3 py-2 border border-gray-200 font-medium text-gray-600">Regime</td>
+                            <td className="px-3 py-2 border border-gray-200 text-gray-900">{regime}</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+
+                    {/* Alíquota */}
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">Alíquota</h4>
+                      <AliqTable rows={aliqRows} />
+                    </div>
+
+                    {/* Observações */}
+                    {observacoes && String(observacoes).trim() !== "" && (
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Observações</h4>
+                        <div className="bg-gray-50 border border-gray-200 rounded p-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                          {observacoes}
+                        </div>
+                      </div>
+                    )}
+
+                  </TabsContent>
+
+                  {/* ── ZFM ── */}
+                  {zfmHasData && (
+                    <TabsContent value="zfm" className="space-y-5 mt-0">
+                      {/* NCM info (mesma estrutura da Regra Geral) */}
+                      <table className="w-full text-sm border-collapse border border-gray-200">
+                        <thead>
+                          <tr className="bg-blue-600 text-white">
+                            <th className="px-3 py-2 text-left font-medium border border-blue-500 w-1/4">Campo</th>
+                            <th className="px-3 py-2 text-left font-medium border border-blue-500">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr className="bg-white">
+                            <td className="px-3 py-2 border border-gray-200 font-medium text-gray-600">NCM</td>
+                            <td className="px-3 py-2 border border-gray-200 font-mono text-gray-900">{selectedNCM.NCM}</td>
+                          </tr>
+                          {fullRow["NCM Econet"] && String(fullRow["NCM Econet"]).trim() !== "" && (
+                            <tr className="bg-gray-50">
+                              <td className="px-3 py-2 border border-gray-200 font-medium text-gray-600">NCM Econet</td>
+                              <td className="px-3 py-2 border border-gray-200 font-mono text-gray-900">{fullRow["NCM Econet"]}</td>
+                            </tr>
+                          )}
+                          {fullRow["Descrição"] && String(fullRow["Descrição"]).trim() !== "" && (
+                            <tr className="bg-white">
+                              <td className="px-3 py-2 border border-gray-200 font-medium text-gray-600">Descrição</td>
+                              <td className="px-3 py-2 border border-gray-200 text-gray-900">{fullRow["Descrição"]}</td>
+                            </tr>
+                          )}
+                          {regime && (
+                            <tr className="bg-gray-50">
+                              <td className="px-3 py-2 border border-gray-200 font-medium text-gray-600">Regime</td>
+                              <td className="px-3 py-2 border border-gray-200 text-gray-900">{regime}</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+
+                      {/* Alíquota ZFM */}
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                          Alíquota — Zona Franca de Manaus
+                        </h4>
+                        <AliqTable rows={zfmAliqRows} />
+                      </div>
+
+                      {/* Observações ZFM */}
+                      {(() => {
+                        const obsZfm =
+                          get("observa", "zfm") ||
+                          get("zfm", "observa") ||
+                          get("observa", "zona");
+                        if (!obsZfm || obsZfm.trim() === "") return null;
+                        return (
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-700 mb-2">Observações</h4>
+                            <div className="bg-gray-50 border border-gray-200 rounded p-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                              {obsZfm}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </TabsContent>
+                  )}
+
+                  {/* ── Suspensão ── */}
+                  {suspHasData && (
+                    <TabsContent value="suspensao" className="space-y-5 mt-0">
+                      {/* NCM info (mesma estrutura da Regra Geral) */}
+                      <table className="w-full text-sm border-collapse border border-gray-200">
+                        <thead>
+                          <tr className="bg-blue-600 text-white">
+                            <th className="px-3 py-2 text-left font-medium border border-blue-500 w-1/4">Campo</th>
+                            <th className="px-3 py-2 text-left font-medium border border-blue-500">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr className="bg-white">
+                            <td className="px-3 py-2 border border-gray-200 font-medium text-gray-600">NCM</td>
+                            <td className="px-3 py-2 border border-gray-200 font-mono text-gray-900">{selectedNCM.NCM}</td>
+                          </tr>
+                          {fullRow["NCM Econet"] && String(fullRow["NCM Econet"]).trim() !== "" && (
+                            <tr className="bg-gray-50">
+                              <td className="px-3 py-2 border border-gray-200 font-medium text-gray-600">NCM Econet</td>
+                              <td className="px-3 py-2 border border-gray-200 font-mono text-gray-900">{fullRow["NCM Econet"]}</td>
+                            </tr>
+                          )}
+                          {fullRow["Descrição"] && String(fullRow["Descrição"]).trim() !== "" && (
+                            <tr className="bg-white">
+                              <td className="px-3 py-2 border border-gray-200 font-medium text-gray-600">Descrição</td>
+                              <td className="px-3 py-2 border border-gray-200 text-gray-900">{fullRow["Descrição"]}</td>
+                            </tr>
+                          )}
+                          {regime && (
+                            <tr className="bg-gray-50">
+                              <td className="px-3 py-2 border border-gray-200 font-medium text-gray-600">Regime</td>
+                              <td className="px-3 py-2 border border-gray-200 text-gray-900">{regime}</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+
+                      {/* Dados de Suspensão */}
+                      {(() => {
+                        const suspDataKeys = suspKeys.filter(k => {
+                          const v = String(fullRow[k] ?? "").trim();
+                          return v !== "" && !k.toLowerCase().includes("observa");
+                        });
+                        if (suspDataKeys.length === 0) return null;
+                        return (
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-700 mb-2">Alíquota</h4>
+                            <table className="w-full text-sm border-collapse border border-gray-200">
+                              <thead>
+                                <tr className="bg-blue-600 text-white">
+                                  <th className="px-3 py-2 text-left font-medium border border-blue-500 w-1/3">Campo</th>
+                                  <th className="px-3 py-2 text-left font-medium border border-blue-500">Valor</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {suspDataKeys.map((k, i) => (
+                                  <tr key={k} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                                    <td className="px-3 py-2 border border-gray-200 font-medium text-gray-600">{k}</td>
+                                    <td className="px-3 py-2 border border-gray-200 text-gray-900">{String(fullRow[k])}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Observações Suspensão */}
+                      {(() => {
+                        const obsKey = suspKeys.find(k => k.toLowerCase().includes("observa"));
+                        const obsVal = obsKey ? String(fullRow[obsKey] ?? "").trim() : "";
+                        if (!obsVal) return null;
+                        return (
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-700 mb-2">Observações</h4>
+                            <div className="bg-gray-50 border border-gray-200 rounded p-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                              {obsVal}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </TabsContent>
+                  )}
+                </Tabs>
               </div>
             );
           })()}
