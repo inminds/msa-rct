@@ -112,6 +112,11 @@ export default function NCMAnalysis() {
     queryKey: ["/api/ncm-excel"],
   });
 
+  // Dados completos (todas as colunas do Excel) — usados apenas no modal de detalhe
+  const { data: ncmRowsFull } = useQuery<Record<string, string>[]>({
+    queryKey: ["/api/ncm-excel-full"],
+  });
+
   // Pedido mais recente do USER logado (só para não-admins)
   const { data: myRequest, refetch: refetchMyRequest } = useQuery<ScanRequest | null>({
     queryKey: ["/api/scan-requests/mine"],
@@ -622,8 +627,9 @@ export default function NCMAnalysis() {
             </DialogTitle>
           </DialogHeader>
           {selectedNCM && (() => {
-            // Todas as colunas com valor, exceto NCM (já no título)
-            const entries = Object.entries(selectedNCM).filter(
+            // Usa a linha completa (todas as colunas do Excel) se disponível
+            const fullRow = ncmRowsFull?.find(r => r["NCM"] === selectedNCM.NCM) ?? selectedNCM;
+            const entries = Object.entries(fullRow).filter(
               ([key, val]) => key !== "NCM" && val !== undefined && String(val).trim() !== ""
             );
             return (

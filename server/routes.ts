@@ -1337,6 +1337,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Excel NCM data — todas as colunas (para modal de detalhe)
+  app.get("/api/ncm-excel-full", isAuthenticated, async (_req, res) => {
+    try {
+      const rows = await readNCMsFromExcelFull();
+      res.json(rows);
+    } catch (error) {
+      console.error("Error reading Excel (full):", error);
+      res.status(500).json({ message: "Failed to read Excel file" });
+    }
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
 
   const httpServer = createServer(app);
