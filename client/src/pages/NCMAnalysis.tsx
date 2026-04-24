@@ -153,6 +153,19 @@ export default function NCMAnalysis() {
 
   useEffect(() => () => { stopPolling(); }, []);
 
+  // Verificação imediata ao montar: retoma indicador se varredura já está rodando
+  useEffect(() => {
+    async function checkOnMount() {
+      try {
+        const res = await fetch("/api/ncm-scan/status", { credentials: "include" });
+        const data = await res.json();
+        if (data.running) startPolling("Varredura em andamento...");
+      } catch { /* ignore */ }
+    }
+    checkOnMount();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Background poll: detecta varreduras agendadas ou disparadas por aprovação
   useEffect(() => {
     const interval = setInterval(async () => {
