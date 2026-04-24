@@ -1358,19 +1358,16 @@ async function processFileAsync(uploadId: string, fileContent: string, fileType:
     const result = await addNCMsToExcel(ncmCodes);
     console.log(`[processFile] Excel updated — added: ${result.added.join(", ") || "none (all already present"}`);
 
-    // SPED/XML/CSV continuam alimentando a base operacional em ncm_items.
-    // A lista limpa de TXT_NCM é tratada como entrada direta para o Excel.
-    if (fileType !== 'TXT_NCM') {
-      for (const item of processedItems) {
-        await storage.createNCMItem({
-          ncmCode: item.ncmCode,
-          description: item.description ?? null,
-          productName: item.productName ?? null,
-          uploadId,
-        });
-      }
-      console.log(`[processFile] Saved ${processedItems.length} NCM items to database`);
+    // Todos os tipos salvam em ncm_items para manter o count correto no dashboard.
+    for (const item of processedItems) {
+      await storage.createNCMItem({
+        ncmCode: item.ncmCode,
+        description: item.description ?? null,
+        productName: item.productName ?? null,
+        uploadId,
+      });
     }
+    console.log(`[processFile] Saved ${processedItems.length} NCM items to database`);
 
     await storage.updateUploadStatus(uploadId, 'COMPLETED');
     console.log(`[processFile] Done: uploadId=${uploadId} → COMPLETED`);

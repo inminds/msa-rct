@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { Eye, EyeOff } from "lucide-react";
 
 interface UserForm {
   id: string;
@@ -28,6 +29,7 @@ export function UserModal({ open, onClose, editUser }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [form, setForm] = useState<UserForm>(EMPTY);
+  const [showPassword, setShowPassword] = useState(false);
   const isEditing = !!editUser;
 
   useEffect(() => {
@@ -100,7 +102,23 @@ export function UserModal({ open, onClose, editUser }: Props) {
           </div>
           <div className="space-y-1">
             <Label>{isEditing ? "Nova senha (deixe vazio para manter)" : "Senha"}</Label>
-            <Input type="password" placeholder="••••••••" value={form.password} onChange={e => set("password", e.target.value)} />
+            <div className="relative">
+              <Input
+                type={showPassword ? "text" : "password"}
+                placeholder="••••••••"
+                value={form.password}
+                onChange={e => set("password", e.target.value)}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
         </div>
         <DialogFooter className="gap-2">
