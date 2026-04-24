@@ -2,7 +2,7 @@ import path from "path";
 import fs from "fs";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
-import type { NCMExcelRow, NCMExcelFullRow } from "./excelService";
+import type { NCMExcelRow, NCMExcelFullRow, HistoricoRow } from "./excelService";
 
 const REPORTS_DIR = process.env.NODE_ENV === "production"
   ? "/tmp/reports"
@@ -12,7 +12,7 @@ if (!fs.existsSync(REPORTS_DIR)) {
   fs.mkdirSync(REPORTS_DIR, { recursive: true });
 }
 
-export type ReportType = "tax-summary" | "ncm-analysis" | "trend-analysis";
+export type ReportType = "tax-summary" | "ncm-analysis" | "trend-analysis" | "history-report";
 export type ReportFormat = "xlsx" | "pdf";
 
 export interface ReportRow { [key: string]: string | number }
@@ -48,6 +48,12 @@ export function buildTrendData(changes: any[]) {
     c.status === "pending" ? "Pendente" : c.status === "accepted" ? "Aceito" : "Rejeitado",
   ]);
   return { title: "Análise de Tendências — Histórico de Mudanças", headers, data };
+}
+
+export function buildHistoricoData(rows: HistoricoRow[]) {
+  const headers = ["Data/Hora", "NCM", "Tipo", "Campo", "Valor Anterior", "Valor Novo"];
+  const data = rows.map(r => headers.map(h => r[h] ?? ""));
+  return { title: "Histórico de Mudanças", headers, data };
 }
 
 // ── Excel generation ─────────────────────────────────────────────────────────
@@ -220,7 +226,8 @@ export async function generateReportFile(
   type: ReportType,
   format: ReportFormat,
   excelRows: NCMExcelRow[],
-  changes: any[]
+  changes: any[],
+  historicoRows?: HistoricoRow[]
 ): Promise<string> {
   let title: string;
   let headers: string[];
@@ -238,6 +245,12 @@ export async function generateReportFile(
     title = d.title;
     headers = d.headers;
     data = d.data;
+  } else if (type === "history-report") {
+    const d = buildHistoricoData(historicoRows ?? []);
+    title = d.title;
+    headers = d.headers;
+    data = d.data;
+    extraInfo = `${d.data.length} registro(s)`;
   } else {
     const d = buildTrendData(changes);
     title = d.title;
@@ -256,9 +269,11 @@ export async function generateReportFile(
 export function getPreviewData(
   type: ReportType,
   excelRows: NCMExcelRow[],
-  changes: any[]
+  changes: any[],
+  historicoRows?: HistoricoRow[]
 ): { title: string; headers: string[]; data: (string | number)[][] } {
   if (type === "tax-summary") return buildTaxSummaryData(excelRows);
   if (type === "ncm-analysis") return buildNCMAnalysisData(excelRows as unknown as NCMExcelFullRow[]);
+  if (type === "history-report") return buildHistoricoData(historicoRows ?? []);
   return buildTrendData(changes);
 }

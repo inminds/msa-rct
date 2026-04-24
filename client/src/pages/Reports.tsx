@@ -23,11 +23,12 @@ import {
   BarChart3,
   PieChart,
   LineChart,
+  History,
   Loader2,
   X,
 } from "lucide-react";
 
-type ReportType = "tax-summary" | "ncm-analysis" | "trend-analysis" | "jurisdiction-report";
+type ReportType = "tax-summary" | "ncm-analysis" | "trend-analysis" | "history-report";
 type ReportFormat = "xlsx" | "pdf";
 
 interface Report {
@@ -75,12 +76,12 @@ const REPORT_TEMPLATES = [
     disabled: false,
   },
   {
-    id: "jurisdiction-report" as ReportType,
-    name: "Relatório por Competência",
-    description: "Segregação de tributos federais e estaduais (em breve — apenas federal disponível)",
-    icon: PieChart,
-    color: "bg-gray-100 text-gray-400",
-    disabled: true,
+    id: "history-report" as ReportType,
+    name: "Histórico de Mudanças",
+    description: "Registro completo de todas as alterações detectadas nas alíquotas por NCM ao longo do tempo",
+    icon: History,
+    color: "bg-purple-100 text-purple-800",
+    disabled: false,
   },
   {
     id: "trend-analysis" as ReportType,
@@ -95,7 +96,7 @@ const REPORT_TEMPLATES = [
 const TYPE_LABELS: Record<ReportType, string> = {
   "tax-summary": "Resumo Tributário",
   "ncm-analysis": "Análise de NCMs",
-  "jurisdiction-report": "Por Competência",
+  "history-report": "Histórico",
   "trend-analysis": "Tendências",
 };
 
@@ -307,6 +308,7 @@ export default function Reports() {
                       <SelectItem value="tax-summary">Resumo Tributário</SelectItem>
                       <SelectItem value="ncm-analysis">Análise NCM</SelectItem>
                       <SelectItem value="trend-analysis">Tendências</SelectItem>
+                      <SelectItem value="history-report">Histórico</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

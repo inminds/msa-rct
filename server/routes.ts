@@ -13,7 +13,7 @@ import { spawn, execFile } from "child_process";
 import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 import path from "path";
-import { readNCMsFromExcel, readNCMsFromExcelFull, addNCMsToExcel, PYTHON } from "./services/excelService";
+import { readNCMsFromExcel, readNCMsFromExcelFull, readHistoricoFromExcel, addNCMsToExcel, PYTHON } from "./services/excelService";
 import { applySchedule, cancelSchedule } from "./services/schedulerService";
 import { setActivePid, getActivePid } from "./services/scanState";
 import { generateReportFile, getPreviewData, type ReportType, type ReportFormat } from "./services/reportService";
@@ -382,11 +382,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Generate async
     (async () => {
       try {
-        const [excelRows, changes] = await Promise.all([
+        const [excelRows, changes, historicoRows] = await Promise.all([
           type === "ncm-analysis" ? readNCMsFromExcelFull().catch(() => []) : readNCMsFromExcel().catch(() => []),
           rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC"),
+          type === "history-report" ? readHistoricoFromExcel().catch(() => []) : Promise.resolve([]),
         ]);
-        const filePath = await generateReportFile(id, name, type, format, excelRows as any, changes);
+        const filePath = await generateReportFile(id, name, type, format, excelRows as any, changes, historicoRows as any);
         await rawRun("UPDATE reports SET status='completed', file_path=? WHERE id=?", [filePath, id]);
       } catch (err: any) {
         await rawRun("UPDATE reports SET status='error', error_message=? WHERE id=?", [err.message, id]);
@@ -450,12 +451,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // GET /api/reports/:id/preview
   app.get("/api/reports/:id/preview", isAuthenticated, async (req, res) => {
     const report = await rawGet("SELECT * FROM reports WHERE id=?", [req.params.id]) as any;
-    const changes = await rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC");
     if (!report) return res.status(404).json({ message: "Relatório não encontrado" });
-    const excelRows = report.type === "ncm-analysis"
-      ? await readNCMsFromExcelFull().catch(() => [])
-      : await readNCMsFromExcel().catch(() => []);
-    const preview = getPreviewData(report.type as ReportType, excelRows as any, changes);
+    const [changes, historicoRows, excelRows] = await Promise.all([
+      rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC"),
+      report.type === "history-report" ? readHistoricoFromExcel().catch(() => []) : Promise.resolve([]),
+      report.type === "ncm-analysis"
+        ? readNCMsFromExcelFull().catch(() => [])
+        : readNCMsFromExcel().catch(() => []),
+    ]);
+    const preview = getPreviewData(report.type as ReportType, excelRows as any, changes, historicoRows as any);
     res.json({ ...preview, reportName: report.name, format: report.format, status: report.status });
   });
 
@@ -463,15 +467,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/reports/preview-template", isAuthenticated, async (req, res) => {
     const type = req.query.type as ReportType;
     if (!type) return res.status(400).json({ message: "type obrigatório" });
-    const changes = await rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC");
-    const excelRows = type === "ncm-analysis"
-      ? await readNCMsFromExcelFull().catch(() => [])
-      : await readNCMsFromExcel().catch(() => []);
-    const preview = getPreviewData(type, excelRows as any, changes);
+    const [changes, historicoRows, excelRows] = await Promise.all([
+      rawAll("SELECT * FROM ncm_changes ORDER BY scan_date DESC"),
+      type === "history-report" ? readHistoricoFromExcel().catch(() => []) : Promise.resolve([]),
+      type === "ncm-analysis"
+        ? readNCMsFromExcelFull().catch(() => [])
+        : readNCMsFromExcel().catch(() => []),
+    ]);
+    const preview = getPreviewData(type, excelRows as any, changes, historicoRows as any);
     const names: Record<string, string> = {
       "tax-summary": "Resumo Tributário",
       "ncm-analysis": "Análise Detalhada de NCMs",
       "trend-analysis": "Análise de Tendências",
+      "history-report": "Histórico de Mudanças",
     };
     res.json({ ...preview, reportName: names[type] ?? type });
   });

@@ -137,6 +137,56 @@ export async function readNCMsFromExcelFull(): Promise<NCMExcelFullRow[]> {
   }
 }
 
+export interface HistoricoRow {
+  "Data/Hora": string;
+  NCM: string;
+  Tipo: string;
+  Campo: string;
+  "Valor Anterior": string;
+  "Valor Novo": string;
+  [key: string]: string;
+}
+
+export async function readHistoricoFromExcel(): Promise<HistoricoRow[]> {
+  if (!fs.existsSync(EXCEL_PATH)) {
+    console.warn("[excelService] bcoDados.xlsx não encontrado.");
+    return [];
+  }
+  try {
+    const XLSX = _require("xlsx");
+    const wb = XLSX.readFile(EXCEL_PATH, { type: "file", cellText: false, cellDates: true });
+
+    // Procura sheet "Histórico" (pode ter encoding diferente)
+    const sheetName = wb.SheetNames.find((n: string) =>
+      n.toLowerCase().includes("hist")
+    ) ?? "";
+    if (!sheetName) return [];
+
+    const ws = wb.Sheets[sheetName];
+    const raw: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+    if (raw.length <= 1) return [];
+
+    const rows: HistoricoRow[] = [];
+    for (let i = 1; i < raw.length; i++) {
+      const r = raw[i];
+      const dataHora = String(r[0] ?? "").trim();
+      if (!dataHora) continue;
+      rows.push({
+        "Data/Hora": dataHora,
+        NCM: String(r[1] ?? ""),
+        Tipo: String(r[2] ?? ""),
+        Campo: String(r[3] ?? ""),
+        "Valor Anterior": String(r[4] ?? "") || "(novo)",
+        "Valor Novo": String(r[5] ?? ""),
+      });
+    }
+    return rows;
+  } catch (err) {
+    console.error("[excelService] Erro ao ler sheet Histórico:", err);
+    return [];
+  }
+}
+
 export async function addNCMsToExcel(
   ncmCodes: string[]
 ): Promise<{ added: string[]; saved_to: string }> {
