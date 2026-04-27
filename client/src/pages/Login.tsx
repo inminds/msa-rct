@@ -6,12 +6,12 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import { Lock, User, Eye, EyeOff } from "lucide-react";
+import { Lock, Mail, Eye, EyeOff } from "lucide-react";
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isPending, setIsPending] = useState(false);
@@ -23,7 +23,7 @@ export default function Login() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email, password }),
         credentials: "include",
       });
 
@@ -37,8 +37,8 @@ export default function Login() {
     } catch (err: any) {
       toast({
         title: "Erro ao fazer login",
-        description: err.message === "Senha incorreta" || err.message === "Usuário não encontrado"
-          ? "Usuário ou senha inválidos"
+        description: err.message === "Senha incorreta" || err.message === "E-mail não encontrado"
+          ? "E-mail ou senha inválidos"
           : err.message,
         variant: "destructive",
       });
@@ -61,27 +61,27 @@ export default function Login() {
             </CardTitle>
 
             <p className="text-sm text-muted-foreground">
-              Entre com seu usuário e senha para acessar a plataforma.
+              Entre com seu e-mail e senha para acessar a plataforma.
             </p>
           </CardHeader>
 
           <CardContent className="space-y-6">
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Usuário */}
+              {/* E-mail */}
               <div className="space-y-2">
-                <Label htmlFor="username">Usuário</Label>
+                <Label htmlFor="email">E-mail</Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
-                    id="username"
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     required
-                    autoComplete="username"
+                    autoComplete="email"
                     autoFocus
                     className="pl-10"
-                    placeholder="seu usuário"
+                    placeholder="seu@email.com"
                   />
                 </div>
               </div>

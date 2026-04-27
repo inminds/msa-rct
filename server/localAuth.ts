@@ -77,13 +77,13 @@ export async function seedUsers() {
 // ─── Configuração do passport-local ─────────────────────────────────────────
 
 passport.use(
-  new LocalStrategy(async (username, password, done) => {
+  new LocalStrategy({ usernameField: "email" }, async (email, password, done) => {
     try {
       const user = await rawGet(
-        "SELECT id, first_name, last_name, email, role, password_hash FROM users WHERE id = ?",
-        [username.toLowerCase()]
+        "SELECT id, first_name, last_name, email, role, password_hash FROM users WHERE LOWER(email) = LOWER(?)",
+        [email.trim()]
       );
-      if (!user) return done(null, false, { message: "Usuário não encontrado" });
+      if (!user) return done(null, false, { message: "E-mail não encontrado" });
       if (!user.password_hash)
         return done(null, false, { message: "Usuário sem senha configurada" });
       const ok = await bcrypt.compare(password, user.password_hash);
