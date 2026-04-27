@@ -4,21 +4,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import { Lock, Mail, Eye, EyeOff } from "lucide-react";
+import { Lock, Mail, Eye, EyeOff, AlertCircle } from "lucide-react";
 
 export default function Login() {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isPending, setIsPending] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setIsPending(true);
+    setErrorMsg(null);
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
@@ -35,13 +35,10 @@ export default function Login() {
       await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       setLocation("/app");
     } catch (err: any) {
-      toast({
-        title: "Erro ao fazer login",
-        description: err.message === "Senha incorreta" || err.message === "E-mail não encontrado"
-          ? "E-mail ou senha inválidos"
-          : err.message,
-        variant: "destructive",
-      });
+      const msg = err.message === "Senha incorreta" || err.message === "E-mail não encontrado"
+        ? "E-mail ou senha inválidos. Verifique suas credenciais e tente novamente."
+        : (err.message || "Erro ao fazer login. Tente novamente.");
+      setErrorMsg(msg);
     } finally {
       setIsPending(false);
     }
@@ -76,7 +73,7 @@ export default function Login() {
                     id="email"
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => { setEmail(e.target.value); setErrorMsg(null); }}
                     required
                     autoComplete="email"
                     autoFocus
@@ -95,7 +92,7 @@ export default function Login() {
                     id="password"
                     type={showPassword ? "text" : "password"}
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => { setPassword(e.target.value); setErrorMsg(null); }}
                     required
                     autoComplete="current-password"
                     className="pl-10 pr-10"
@@ -111,6 +108,13 @@ export default function Login() {
                   </button>
                 </div>
               </div>
+
+              {errorMsg && (
+                <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
 
               <Button type="submit" className="w-full" disabled={isPending}>
                 {isPending ? "Entrando..." : "Entrar"}
