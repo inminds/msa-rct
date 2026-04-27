@@ -16,6 +16,7 @@ import Reports from "@/pages/Reports";
 import Users from "@/pages/Users";
 import RPA from "@/pages/RPA";
 import RPADashboard from "@/pages/RPADashboard";
+import AuditLogs from "@/pages/AuditLogs";
 import NotFound from "@/pages/not-found";
 
 /** Redirect simples para wouter */
@@ -56,6 +57,7 @@ function Router() {
       <Route path="/users"><ProtectedRoute component={Users} /></Route>
       <Route path="/rpa"><ProtectedRoute component={RPA} /></Route>
       <Route path="/rpa-dashboard"><ProtectedRoute component={RPADashboard} /></Route>
+      <Route path="/audit-logs"><ProtectedRoute component={AuditLogs} /></Route>
 
       {/* 404 */}
       <Route component={NotFound} />

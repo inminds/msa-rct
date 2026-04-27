@@ -27,6 +27,34 @@ function isInternalRequest(req: any): boolean {
   return req.headers["x-internal-key"] === INTERNAL_API_KEY;
 }
 
+// ── Audit logging helpers ────────────────────────────────────────────────────
+
+function getUserInfo(req: any): { id: string; name: string } {
+  const u = req.user as any;
+  const id = u?.id ?? u?.claims?.sub ?? "unknown";
+  const name = u?.firstName
+    ? `${u.firstName} ${u.lastName ?? ""}`.trim()
+    : (u?.email ?? id);
+  return { id, name };
+}
+
+async function logAudit(
+  userId: string,
+  userName: string,
+  action: string,
+  category: string,
+  details?: Record<string, any>
+): Promise<void> {
+  try {
+    await rawRun(
+      "INSERT INTO audit_logs (user_id, user_name, action, category, details) VALUES (?, ?, ?, ?, ?)",
+      [userId, userName, action, category, details ? JSON.stringify(details) : null]
+    );
+  } catch (err) {
+    console.error("[audit] Erro ao salvar log:", err);
+  }
+}
+
 // Demo data generation function
 async function generateDemoData(userId: string): Promise<void> {
   // Create demo uploads
@@ -377,6 +405,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       [id, name, type, format, userId]
     );
 
+    const { id: rUserId, name: rUserName } = getUserInfo(req);
+    logAudit(rUserId, rUserName, "REPORT_GENERATED", "report", { name, type, format, reportId: id });
+
     res.json({ id, status: "pending" });
 
     // Generate async
@@ -443,6 +474,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       "UPDATE reports SET download_count = download_count + 1, downloaded_by = ? WHERE id = ?",
       [userName, req.params.id]
     );
+    logAudit(userId, userName, "REPORT_DOWNLOADED", "report", {
+      reportId: req.params.id,
+      reportName: report.name,
+      format: report.format,
+    });
     const ext = report.format === "xlsx" ? "xlsx" : "pdf";
     const safeName = report.name.replace(/[^a-zA-Z0-9\-_]/g, "_");
     res.download(report.file_path, `${safeName}.${ext}`);
@@ -517,7 +553,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Process file asynchronously
-      processFileAsync(upload.id, file.buffer.toString('utf-8'), fileType);
+      const { id: uId, name: uName } = getUserInfo(req);
+      processFileAsync(upload.id, file.buffer.toString('utf-8'), fileType, uId, uName);
+
+      logAudit(uId, uName, "UPLOAD_CREATED", "upload", {
+        filename: file.originalname,
+        fileType,
+        description: description || null,
+        uploadId: upload.id,
+      });
 
       res.json({ uploadId: upload.id, message: "File upload started" });
     } catch (error) {
@@ -972,6 +1016,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const modeLabel = ncms?.length ? `selecionados (${ncms.length})` : mode ?? "incompletos";
       console.log(`[ncm-scan] econet_scraper triggered (pid: ${child.pid}) — mode: ${modeLabel} — log: .data/scraper.log`);
+      const { id: tUserId, name: tUserName } = getUserInfo(req);
+      const scanAction = ncms?.length ? "SCAN_TRIGGERED_SELECIONADOS"
+        : mode === "todos" ? "SCAN_TRIGGERED_TODOS"
+        : "SCAN_TRIGGERED_INCOMPLETOS";
+      logAudit(tUserId, tUserName, scanAction, "scan", {
+        mode: modeLabel,
+        ncms: ncms ?? null,
+        pid: child.pid,
+      });
       res.json({
         success: true,
         message: ncms?.length
@@ -1037,6 +1090,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         "INSERT INTO users (id, first_name, last_name, email, role, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
         [id.toLowerCase(), firstName, lastName ?? "", email ?? "", role ?? "USER", hash]
       );
+      const { id: cuUserId, name: cuUserName } = getUserInfo(req);
+      logAudit(cuUserId, cuUserName, "USER_CREATED", "user", {
+        targetId: id.toLowerCase(),
+        targetName: `${firstName} ${lastName ?? ""}`.trim(),
+        email: email ?? "",
+        role: role ?? "USER",
+      });
       res.status(201).json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Erro ao criar usuário" });
@@ -1059,6 +1119,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           [firstName, lastName ?? "", email ?? "", role ?? "USER", req.params.id]
         );
       }
+      const { id: euUserId, name: euUserName } = getUserInfo(req);
+      logAudit(euUserId, euUserName, "USER_UPDATED", "user", {
+        targetId: req.params.id,
+        targetName: `${firstName} ${lastName ?? ""}`.trim(),
+        email: email ?? "",
+        role: role ?? "USER",
+        passwordChanged: !!password,
+      });
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Erro ao atualizar usuário" });
@@ -1068,7 +1136,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/users/:id", isAdmin, async (req: any, res) => {
     try {
       if (req.params.id === (req.user as any).id) return res.status(400).json({ message: "Você não pode excluir sua própria conta" });
+      const targetUser = await rawGet(
+        "SELECT first_name, last_name, email, role FROM users WHERE id = ?",
+        [req.params.id]
+      ) as any;
       await rawRun("DELETE FROM users WHERE id = ?", [req.params.id]);
+      const { id: duUserId, name: duUserName } = getUserInfo(req);
+      logAudit(duUserId, duUserName, "USER_DELETED", "user", {
+        targetId: req.params.id,
+        targetName: targetUser ? `${targetUser.first_name} ${targetUser.last_name ?? ""}`.trim() : req.params.id,
+        email: targetUser?.email ?? "",
+        role: targetUser?.role ?? "",
+      });
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Erro ao excluir usuário" });
@@ -1109,6 +1188,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rows = await db.select().from(scanSchedule).where(eq(scanSchedule.id, 1));
       if (enabled) applySchedule(rows[0]);
       else cancelSchedule();
+      const { id: schUserId, name: schUserName } = getUserInfo(req);
+      logAudit(schUserId, schUserName, "SCHEDULE_CONFIGURED", "schedule", {
+        enabled,
+        frequency,
+        dayOfWeek,
+        dayOfMonth,
+        hour,
+        minute,
+        mode,
+      });
       res.json({ success: true });
     } catch (error) {
       console.error("Error saving schedule:", error);
@@ -1116,7 +1205,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/ncm-scan/schedule", isAuthenticated, async (_req, res) => {
+  app.delete("/api/ncm-scan/schedule", isAuthenticated, async (req: any, res) => {
     try {
       await db.insert(scanSchedule).values({
         id: 1, enabled: 0, frequency: "weekly", dayOfWeek: 1, dayOfMonth: 1, hour: 8, minute: 0, mode: "incompletos", updatedAt: new Date(),
@@ -1125,6 +1214,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         set: { enabled: 0, updatedAt: new Date() },
       });
       cancelSchedule();
+      const { id: cschUserId, name: cschUserName } = getUserInfo(req);
+      logAudit(cschUserId, cschUserName, "SCHEDULE_CANCELLED", "schedule", {});
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Failed to cancel schedule" });
@@ -1152,6 +1243,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         "INSERT INTO scan_requests (requested_by, mode, status, created_at, updated_at) VALUES (?, ?, 'pending_thayssa', ?, ?)",
         [userId, mode, now, now]
       );
+      const { id: srUserId, name: srUserName } = getUserInfo(req);
+      logAudit(srUserId, srUserName, "SCAN_REQUESTED", "scan", {
+        mode,
+        requestId: result.lastInsertRowid,
+      });
       res.status(201).json({ id: result.lastInsertRowid, status: "pending_thayssa" });
     } catch (error) {
       console.error("Error creating scan request:", error);
@@ -1217,6 +1313,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (row.status === "pending_thayssa") {
         if (userId !== "thayssa") { return res.status(403).json({ message: "Somente a Thayssa pode aprovar nesta etapa" }); }
         await rawRun("UPDATE scan_requests SET status='pending_yuri', updated_at=? WHERE id=?", [now, requestId]);
+        const { id: apUserId, name: apUserName } = getUserInfo(req);
+        logAudit(apUserId, apUserName, "SCAN_APPROVED_THAYSSA", "scan", {
+          requestId,
+          requestedBy: row.requested_by,
+          mode: row.mode,
+          nextStep: "Aguardando aprovação do Yuri",
+        });
         return res.json({ success: true, newStatus: "pending_yuri" });
       }
       if (row.status === "pending_yuri") {
@@ -1238,6 +1341,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         child.unref();
         if (child.pid) setActivePid(child.pid);
         console.log(`[scan-requests] Yuri aprovou — scan iniciado (pid: ${child.pid}) mode: ${row.mode} — log: .data/scraper.log`);
+        const { id: ap2UserId, name: ap2UserName } = getUserInfo(req);
+        logAudit(ap2UserId, ap2UserName, "SCAN_APPROVED_YURI", "scan", {
+          requestId,
+          requestedBy: row.requested_by,
+          mode: row.mode,
+          pid: child.pid,
+        });
         return res.json({ success: true, newStatus: "approved", pid: child.pid });
       }
       return res.status(400).json({ message: "Solicitação não está em estado aprovável" });
@@ -1263,6 +1373,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         "UPDATE scan_requests SET status='rejected', rejected_by=?, rejection_note=?, updated_at=? WHERE id=?",
         [userId, note ?? null, now, requestId]
       );
+      const { id: rjUserId, name: rjUserName } = getUserInfo(req);
+      logAudit(rjUserId, rjUserName, "SCAN_REJECTED", "scan", {
+        requestId,
+        requestedBy: row.requested_by,
+        mode: row.mode,
+        note: note ?? null,
+      });
       res.json({ success: true, newStatus: "rejected" });
     } catch (error) {
       console.error("Error rejecting scan request:", error);
@@ -1301,13 +1418,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/ncm-changes/accept-all — aceita todas as pendentes
-  app.post("/api/ncm-changes/accept-all", isAdmin, async (_req, res) => {
+  app.post("/api/ncm-changes/accept-all", isAdmin, async (req: any, res) => {
     try {
       const now = new Date().toISOString();
       const result = await rawRun(
         "UPDATE ncm_changes SET status='accepted', resolved_at=? WHERE status='pending'",
         [now]
       );
+      const { id: aaUserId, name: aaUserName } = getUserInfo(req);
+      logAudit(aaUserId, aaUserName, "NCM_CHANGES_ACCEPTED_ALL", "ncm_change", {
+        count: result.changes,
+      });
       res.json({ success: true, updated: result.changes });
     } catch (error) {
       res.status(500).json({ message: "Erro ao aceitar mudanças" });
@@ -1315,12 +1436,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/ncm-changes/:id/accept
-  app.post("/api/ncm-changes/:id/accept", isAdmin, async (req, res) => {
+  app.post("/api/ncm-changes/:id/accept", isAdmin, async (req: any, res) => {
     try {
       const now = new Date().toISOString();
       const row = await rawGet("SELECT * FROM ncm_changes WHERE id = ?", [req.params.id]) as any;
       if (!row) { return res.status(404).json({ message: "Mudança não encontrada" }); }
       await rawRun("UPDATE ncm_changes SET status='accepted', resolved_at=? WHERE id=?", [now, req.params.id]);
+      const { id: acUserId, name: acUserName } = getUserInfo(req);
+      logAudit(acUserId, acUserName, "NCM_CHANGE_ACCEPTED", "ncm_change", {
+        changeId: req.params.id,
+        ncm: row.ncm,
+        field: row.field,
+        oldValue: row.old_value,
+        newValue: row.new_value,
+      });
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Erro ao aceitar mudança" });
@@ -1328,7 +1457,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/ncm-changes/:id/reject — rejeita e restaura valor antigo no Excel
-  app.post("/api/ncm-changes/:id/reject", isAdmin, async (req, res) => {
+  app.post("/api/ncm-changes/:id/reject", isAdmin, async (req: any, res) => {
     try {
       const now = new Date().toISOString();
       const row = await rawGet("SELECT * FROM ncm_changes WHERE id = ?", [req.params.id]) as any;
@@ -1338,6 +1467,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await execFileAsync(PYTHON, ["excel_helper.py", "restore", row.ncm, row.field, row.old_value ?? ""], { cwd: path.resolve(".") });
 
       await rawRun("UPDATE ncm_changes SET status='rejected', resolved_at=? WHERE id=?", [now, req.params.id]);
+      const { id: rjcUserId, name: rjcUserName } = getUserInfo(req);
+      logAudit(rjcUserId, rjcUserName, "NCM_CHANGE_REJECTED", "ncm_change", {
+        changeId: req.params.id,
+        ncm: row.ncm,
+        field: row.field,
+        oldValue: row.old_value,
+        newValue: row.new_value,
+        restoredToOldValue: true,
+      });
       res.json({ success: true });
     } catch (error: any) {
       console.error("Erro ao rejeitar mudança:", error);
@@ -1369,13 +1507,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Audit logs endpoint (admin only)
+
+  app.get("/api/audit-logs", isAdmin, async (req, res) => {
+    try {
+      const category = (req.query.category as string) || "all";
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      let rows: any[];
+      let total: any;
+      if (category === "all") {
+        rows = await rawAll(
+          "SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+          [limit, offset]
+        ) as any[];
+        total = await rawGet("SELECT COUNT(*) AS n FROM audit_logs") as any;
+      } else {
+        rows = await rawAll(
+          "SELECT * FROM audit_logs WHERE category = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+          [category, limit, offset]
+        ) as any[];
+        total = await rawGet("SELECT COUNT(*) AS n FROM audit_logs WHERE category = ?", [category]) as any;
+      }
+
+      res.json({
+        logs: rows.map(r => ({
+          id: r.id,
+          createdAt: r.created_at,
+          userId: r.user_id,
+          userName: r.user_name,
+          action: r.action,
+          category: r.category,
+          details: r.details ? JSON.parse(r.details) : null,
+        })),
+        total: Number(total?.n ?? 0),
+      });
+    } catch (error) {
+      console.error("Error fetching audit logs:", error);
+      res.status(500).json({ message: "Erro ao buscar logs" });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   const httpServer = createServer(app);
   return httpServer;
 }
 
 // Async file processing function — writes extracted NCMs to bcoDados.xlsx
-async function processFileAsync(uploadId: string, fileContent: string, fileType: 'SPED' | 'XML' | 'CSV' | 'TXT_NCM') {
+async function processFileAsync(uploadId: string, fileContent: string, fileType: 'SPED' | 'XML' | 'CSV' | 'TXT_NCM', userId = "system", userName = "Sistema") {
   try {
     console.log(`[processFile] Starting: uploadId=${uploadId}, type=${fileType}, contentLength=${fileContent.length}`);
 
@@ -1402,6 +1583,15 @@ async function processFileAsync(uploadId: string, fileContent: string, fileType:
 
     await storage.updateUploadStatus(uploadId, 'COMPLETED');
     console.log(`[processFile] Done: uploadId=${uploadId} → COMPLETED`);
+
+    // Log upload processado com NCMs extraídos
+    logAudit(userId, userName, "UPLOAD_PROCESSED", "upload", {
+      uploadId,
+      fileType,
+      totalNcms: ncmCodes.length,
+      newNcms: result.added,
+      alreadyPresent: ncmCodes.filter((c: string) => !result.added.includes(c)),
+    });
 
     // Auto-trigger: se novos NCMs foram adicionados ao Excel, dispara varredura automática
     if (result.added.length > 0) {
@@ -1445,6 +1635,11 @@ async function processFileAsync(uploadId: string, fileContent: string, fileType:
           child.unref();
           if (child.pid) setActivePid(child.pid);
           console.log(`[processFile] Auto-scraper iniciado (pid: ${child.pid})`);
+          logAudit(userId, userName, "SCAN_AUTO_TRIGGERED", "scan", {
+            uploadId,
+            newNcms: result.added,
+            pid: child.pid,
+          });
         } catch (spawnErr) {
           console.error("[processFile] Erro ao iniciar auto-scraper:", spawnErr);
         }

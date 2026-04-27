@@ -138,6 +138,17 @@ if (isDev) {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (requested_by) REFERENCES users(id)
     );
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      user_id TEXT NOT NULL,
+      user_name TEXT NOT NULL,
+      action TEXT NOT NULL,
+      category TEXT NOT NULL,
+      details TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_category ON audit_logs(category);
   `);
 
   db = drizzleSqlite({ client: sqliteDb, schema });

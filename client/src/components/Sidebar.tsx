@@ -10,6 +10,7 @@ import {
   User,
   LogOut,
   GitCompareArrows,
+  ScrollText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -24,9 +25,14 @@ const navigation = [
   { name: "Mudanças em NCMs", href: "/rpa-dashboard", icon: GitCompareArrows },
 ];
 
+const adminNavigation = [
+  { name: "Logs de Auditoria", href: "/audit-logs", icon: ScrollText },
+];
+
 export function Sidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
+  const isAdmin = (user as any)?.role === "ADMIN";
 
   return (
     <aside className="w-64 bg-white shadow-lg flex flex-col">
@@ -44,7 +50,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {navigation.map((item) => {
           const isActive = location === item.href;
           return (
@@ -64,6 +70,36 @@ export function Sidebar() {
             </Link>
           );
         })}
+
+        {/* Itens exclusivos para ADMIN */}
+        {isAdmin && (
+          <>
+            <div className="pt-2 pb-1">
+              <p className="px-3 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                Administração
+              </p>
+            </div>
+            {adminNavigation.map((item) => {
+              const isActive = location === item.href;
+              return (
+                <Link key={item.name} href={item.href}>
+                  <div
+                    className={cn(
+                      "flex items-center space-x-3 px-3 py-2 rounded-lg font-medium transition-colors cursor-pointer",
+                      isActive
+                        ? "bg-blue-50 text-blue-700"
+                        : "text-gray-700 hover:bg-gray-100"
+                    )}
+                    data-testid={`nav-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
+                  >
+                    <item.icon className="w-5 h-5" />
+                    <span>{item.name}</span>
+                  </div>
+                </Link>
+              );
+            })}
+          </>
+        )}
       </nav>
 
       {/* User Profile */}
