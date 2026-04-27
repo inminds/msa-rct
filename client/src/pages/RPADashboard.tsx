@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
@@ -7,7 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ArrowLeftRight, CheckCheck, XCircle, Clock, CheckCircle2, AlertCircle, GitCompareArrows } from "lucide-react";
+import { ArrowLeftRight, CheckCheck, XCircle, Clock, CheckCircle2, AlertCircle, GitCompareArrows, ChevronLeft, ChevronRight } from "lucide-react";
+
+const PAGE_SIZE_OPTIONS = [
+  { label: "10 por página", value: 10 },
+  { label: "20 por página", value: 20 },
+  { label: "50 por página", value: 50 },
+  { label: "100 por página", value: 100 },
+  { label: "Todos", value: 0 },
+];
 import { useToast } from "@/hooks/use-toast";
 
 interface NCMChange {
@@ -30,6 +38,8 @@ function StatusBadge({ status }: { status: NCMChange["status"] }) {
 export default function RPADashboard() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [acceptAllOpen, setAcceptAllOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -58,6 +68,14 @@ export default function RPADashboard() {
   const pending = allChanges.filter(c => c.status === "pending").length;
   const accepted = allChanges.filter(c => c.status === "accepted").length;
   const rejected = allChanges.filter(c => c.status === "rejected").length;
+
+  useEffect(() => { setCurrentPage(1); }, [statusFilter, pageSize]);
+
+  const totalItems = changes.length;
+  const showAll = pageSize === 0;
+  const totalPages = showAll ? 1 : Math.max(1, Math.ceil(totalItems / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginated = showAll ? changes : changes.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/ncm-changes"] });
@@ -170,16 +188,28 @@ export default function RPADashboard() {
           {/* Tabela de mudanças */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <GitCompareArrows className="w-5 h-5 text-gray-500" />
-                Mudanças Detectadas
-                <span className="ml-1 text-sm font-normal text-gray-500">({changes.length} resultado{changes.length !== 1 ? "s" : ""})</span>
-              </CardTitle>
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <CardTitle className="flex items-center gap-2">
+                  <GitCompareArrows className="w-5 h-5 text-gray-500" />
+                  Mudanças Detectadas
+                  <span className="ml-1 text-sm font-normal text-gray-500">({totalItems} resultado{totalItems !== 1 ? "s" : ""})</span>
+                </CardTitle>
+                {totalItems > 0 && (
+                  <Select value={String(pageSize)} onValueChange={v => setPageSize(Number(v))}>
+                    <SelectTrigger className="w-40 h-8 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {PAGE_SIZE_OPTIONS.map(opt => (
+                        <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {isLoading ? (
                 <div className="text-center py-12 text-gray-500">Carregando...</div>
-              ) : changes.length === 0 ? (
+              ) : totalItems === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-400">
                   <ArrowLeftRight className="w-12 h-12 text-gray-200" />
                   <p className="text-base font-medium text-gray-500">Nenhuma mudança encontrada</p>
@@ -200,7 +230,7 @@ export default function RPADashboard() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-100">
-                      {changes.map((change) => (
+                      {paginated.map((change) => (
                         <tr
                           key={change.id}
                           className={
@@ -256,6 +286,52 @@ export default function RPADashboard() {
                       ))}
                     </tbody>
                   </table>
+                  {/* Paginação */}
+                  {!showAll && totalPages > 1 && (
+                    <div className="flex items-center justify-between border-t border-gray-100 pt-4 mt-2">
+                      <p className="text-sm text-gray-500">
+                        Exibindo {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, totalItems)} de {totalItems}
+                      </p>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                          disabled={safePage === 1}
+                          className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        {Array.from({ length: totalPages }, (_, i) => i + 1)
+                          .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+                          .reduce<(number | "...")[]>((acc, p, i, arr) => {
+                            if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push("...");
+                            acc.push(p);
+                            return acc;
+                          }, [])
+                          .map((item, i) =>
+                            item === "..." ? (
+                              <span key={`e-${i}`} className="px-1 text-gray-400 text-sm">…</span>
+                            ) : (
+                              <button
+                                key={item}
+                                onClick={() => setCurrentPage(item as number)}
+                                className={`min-w-[32px] h-8 px-2 rounded text-sm font-medium transition-colors ${
+                                  safePage === item ? "bg-primary text-primary-foreground" : "hover:bg-gray-100 text-gray-700"
+                                }`}
+                              >
+                                {item}
+                              </button>
+                            )
+                          )}
+                        <button
+                          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                          disabled={safePage === totalPages}
+                          className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
