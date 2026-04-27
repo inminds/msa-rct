@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { queryClient } from "@/lib/queryClient";
-import { Lock, Mail, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { Link } from "wouter";
+import { Lock, Mail, Eye, EyeOff, AlertCircle, ArrowLeft } from "lucide-react";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -46,6 +47,13 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4 py-8">
+
+      {/* Voltar para home — canto superior esquerdo */}
+      <Link href="/" className="absolute top-4 left-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+        <ArrowLeft className="h-4 w-4" />
+        Página inicial
+      </Link>
+
       <div className="w-full max-w-md space-y-6">
         <Card className="w-full shadow-lg">
           <CardHeader className="text-center space-y-4">
