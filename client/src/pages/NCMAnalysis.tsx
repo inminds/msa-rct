@@ -276,6 +276,7 @@ export default function NCMAnalysis() {
     onSuccess: (_, ncms) => {
       setScanDone(false);
       setSelectedNCMs(new Set());
+      setSelectionMode(false);
       startPolling(`Buscando ${ncms.length} NCM(s) selecionado(s) no Econet...`);
     },
     onError: () => toast({ title: "Erro", description: "Não foi possível iniciar a varredura.", variant: "destructive" }),
@@ -664,10 +665,11 @@ export default function NCMAnalysis() {
                         <th className="px-4 py-3 w-10">
                           <input
                             type="checkbox"
-                            className="h-4 w-4 rounded border-gray-300 text-primary cursor-pointer"
+                            className="h-4 w-4 rounded border-gray-300 text-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             checked={allPageSelected}
                             ref={el => { if (el) el.indeterminate = somePageSelected && !allPageSelected; }}
                             onChange={togglePage}
+                            disabled={scanning}
                             title="Selecionar página atual"
                           />
                         </th>
@@ -693,8 +695,9 @@ export default function NCMAnalysis() {
                             <td className="px-4 py-4 w-10">
                               <input
                                 type="checkbox"
-                                className="h-4 w-4 rounded border-gray-300 text-primary cursor-pointer"
+                                className="h-4 w-4 rounded border-gray-300 text-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                 checked={isSelected}
+                                disabled={scanning}
                                 onChange={() => toggleRow(row.NCM)}
                               />
                             </td>
