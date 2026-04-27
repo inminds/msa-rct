@@ -586,6 +586,7 @@ export default function NCMAnalysis() {
                       className={selectionMode
                         ? "text-gray-700 border-gray-400 bg-gray-100 hover:bg-gray-200"
                         : "text-indigo-700 border-indigo-300 hover:bg-indigo-50"}
+                      disabled={scanning}
                       onClick={() => {
                         setSelectionMode(v => !v);
                         setSelectedNCMs(new Set());
@@ -612,6 +613,7 @@ export default function NCMAnalysis() {
                       className={selectionMode
                         ? "text-gray-700 border-gray-400 bg-gray-100 hover:bg-gray-200"
                         : "text-indigo-700 border-indigo-300 hover:bg-indigo-50"}
+                      disabled={scanning}
                       onClick={() => {
                         setSelectionMode(v => !v);
                         setSelectedNCMs(new Set());
