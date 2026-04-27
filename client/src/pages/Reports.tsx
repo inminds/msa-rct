@@ -112,7 +112,6 @@ const TYPE_LABELS: Record<ReportType, string> = {
 export default function Reports() {
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -196,11 +195,10 @@ export default function Reports() {
   const filtered = reports.filter(r => {
     const matchType = !typeFilter || typeFilter === "all" || r.type === typeFilter;
     const matchStatus = !statusFilter || statusFilter === "all" || r.status === statusFilter;
-    const matchSearch = !search || r.name.toLowerCase().includes(search.toLowerCase());
-    return matchType && matchStatus && matchSearch;
+    return matchType && matchStatus;
   });
 
-  useEffect(() => { setCurrentPage(1); }, [typeFilter, statusFilter, search, pageSize]);
+  useEffect(() => { setCurrentPage(1); }, [typeFilter, statusFilter, pageSize]);
 
   const totalItems = filtered.length;
   const showAll = pageSize === 0;
@@ -312,13 +310,6 @@ export default function Reports() {
           <Card>
             <CardContent className="p-4">
               <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1">
-                  <Input
-                    placeholder="Buscar relatórios..."
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                  />
-                </div>
                 <div className="sm:w-48">
                   <Select value={typeFilter} onValueChange={setTypeFilter}>
                     <SelectTrigger><SelectValue placeholder="Tipo de Relatório" /></SelectTrigger>

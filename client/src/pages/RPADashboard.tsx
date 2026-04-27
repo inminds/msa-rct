@@ -5,9 +5,10 @@ import { TopBar } from "@/components/TopBar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ArrowLeftRight, CheckCheck, XCircle, Clock, CheckCircle2, AlertCircle, GitCompareArrows, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeftRight, CheckCheck, XCircle, Clock, CheckCircle2, AlertCircle, GitCompareArrows, ChevronLeft, ChevronRight, Search } from "lucide-react";
 
 const PAGE_SIZE_OPTIONS = [
   { label: "10 por página", value: 10 },
@@ -37,6 +38,7 @@ function StatusBadge({ status }: { status: NCMChange["status"] }) {
 
 export default function RPADashboard() {
   const [statusFilter, setStatusFilter] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
   const [acceptAllOpen, setAcceptAllOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -69,13 +71,19 @@ export default function RPADashboard() {
   const accepted = allChanges.filter(c => c.status === "accepted").length;
   const rejected = allChanges.filter(c => c.status === "rejected").length;
 
-  useEffect(() => { setCurrentPage(1); }, [statusFilter, pageSize]);
+  useEffect(() => { setCurrentPage(1); }, [statusFilter, searchTerm, pageSize]);
 
-  const totalItems = changes.length;
+  const filtered = changes.filter(c => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.trim().toLowerCase();
+    return c.ncm.toLowerCase().includes(term) || c.field.toLowerCase().includes(term);
+  });
+
+  const totalItems = filtered.length;
   const showAll = pageSize === 0;
   const totalPages = showAll ? 1 : Math.max(1, Math.ceil(totalItems / pageSize));
   const safePage = Math.min(currentPage, totalPages);
-  const paginated = showAll ? changes : changes.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const paginated = showAll ? filtered : filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/ncm-changes"] });
@@ -161,6 +169,16 @@ export default function RPADashboard() {
           <Card>
             <CardContent className="p-4">
               <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                {/* Busca por NCM */}
+                <div className="relative sm:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Input
+                    placeholder="Buscar por NCM ou campo..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
                 <div className="sm:w-56">
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
                     <SelectTrigger><SelectValue placeholder="Filtrar por status" /></SelectTrigger>
