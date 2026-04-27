@@ -1377,7 +1377,7 @@ async function processFileAsync(uploadId: string, fileContent: string, fileType:
 
     const ncmCodes = processedItems.map(item => item.ncmCode);
     const result = await addNCMsToExcel(ncmCodes);
-    console.log(`[processFile] Excel updated — added: ${result.added.join(", ") || "none (all already present"}`);
+    console.log(`[processFile] Excel updated — added: ${result.added.join(", ") || "none (all already present)"}`);
 
     // Todos os tipos salvam em ncm_items para manter o count correto no dashboard.
     for (const item of processedItems) {
@@ -1392,6 +1392,56 @@ async function processFileAsync(uploadId: string, fileContent: string, fileType:
 
     await storage.updateUploadStatus(uploadId, 'COMPLETED');
     console.log(`[processFile] Done: uploadId=${uploadId} → COMPLETED`);
+
+    // Auto-trigger: se novos NCMs foram adicionados ao Excel, dispara varredura automática
+    if (result.added.length > 0) {
+      const activePid = getActivePid();
+      if (activePid !== null) {
+        try { process.kill(activePid, 0); console.log(`[processFile] Scraper já está rodando (pid: ${activePid}) — auto-trigger ignorado`); }
+        catch { setActivePid(null); }
+      }
+      if (getActivePid() === null) {
+        console.log(`[processFile] ${result.added.length} NCM(s) novo(s) adicionado(s) — disparando varredura automática (incompletos)...`);
+        try {
+          const logDir = path.resolve(".data");
+          if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+          const logFd = fs.openSync(path.join(logDir, "scraper.log"), "a");
+
+          // Snapshot antes da varredura para detectar mudanças
+          let snapshot: Record<string, string>[] = [];
+          try { snapshot = await readNCMsFromExcel(); } catch {}
+
+          const child = spawn(PYTHON, ["econet_scraper.py"], {
+            cwd: path.resolve("."),
+            env: { ...process.env, PYTHONUNBUFFERED: "1" },
+            detached: true,
+            stdio: ["ignore", logFd, logFd],
+          });
+
+          child.on("close", async (code) => {
+            try { fs.closeSync(logFd); } catch {}
+            setActivePid(null);
+            console.log(`[processFile] Auto-scraper finalizado (code: ${code})`);
+            if (snapshot.length > 0) {
+              try {
+                const after = await readNCMsFromExcel();
+                await detectAndSaveChanges(snapshot, after);
+              } catch (err) {
+                console.error("[processFile] Erro ao detectar mudanças pós-auto-scan:", err);
+              }
+            }
+          });
+
+          child.unref();
+          if (child.pid) setActivePid(child.pid);
+          console.log(`[processFile] Auto-scraper iniciado (pid: ${child.pid})`);
+        } catch (spawnErr) {
+          console.error("[processFile] Erro ao iniciar auto-scraper:", spawnErr);
+        }
+      }
+    } else {
+      console.log(`[processFile] Nenhum NCM novo adicionado — varredura automática não necessária`);
+    }
   } catch (error) {
     console.error(`[processFile] ERROR on uploadId=${uploadId}:`, error);
     try {
