@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search, RefreshCw, ScanSearch, ScanLine, Loader2, X,
   CheckCircle2, CalendarClock, Clock, XCircle, CheckCheck, AlertCircle, Send, Eye,
-  History, ShieldCheck,
+  History, ShieldCheck, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ScheduleModal } from "@/components/ScheduleModal";
@@ -103,9 +103,19 @@ function RequestStatusCard({ request, onNewRequest }: { request: ScanRequest; on
   return null;
 }
 
+const PAGE_SIZE_OPTIONS = [
+  { label: "10 por página", value: 10 },
+  { label: "20 por página", value: 20 },
+  { label: "50 por página", value: 50 },
+  { label: "100 por página", value: 100 },
+  { label: "Todos", value: 0 },
+];
+
 export default function NCMAnalysis() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [selectedNCM, setSelectedNCM] = useState<NCMRow | null>(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -317,6 +327,9 @@ export default function NCMAnalysis() {
   const normalize = (s: string) =>
     s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
+  // Reset página ao mudar filtros ou tamanho da página
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, statusFilter, pageSize]);
+
   const filtered = ncmRows?.filter((row) => {
     const term = normalize(searchTerm.trim());
     const matchesSearch =
@@ -333,6 +346,14 @@ export default function NCMAnalysis() {
       (statusFilter === "pendente" && !preenchido);
     return matchesSearch && matchesStatus;
   });
+
+  const totalItems = filtered?.length ?? 0;
+  const showAll = pageSize === 0;
+  const totalPages = showAll ? 1 : Math.max(1, Math.ceil(totalItems / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginated = showAll
+    ? filtered
+    : filtered?.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   if (isLoading) {
     return (
@@ -554,12 +575,29 @@ export default function NCMAnalysis() {
           {/* Tabela de NCMs */}
           <Card>
             <CardHeader>
-              <CardTitle>
-                Análises de NCM
-                <span className="ml-2 text-sm font-normal text-gray-500">
-                  ({filtered?.length ?? 0} resultados)
-                </span>
-              </CardTitle>
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <CardTitle>
+                  Análises de NCM
+                  <span className="ml-2 text-sm font-normal text-gray-500">
+                    ({totalItems} resultado{totalItems !== 1 ? "s" : ""})
+                  </span>
+                </CardTitle>
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => setPageSize(Number(v))}
+                >
+                  <SelectTrigger className="w-40 h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAGE_SIZE_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={String(opt.value)}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -578,7 +616,7 @@ export default function NCMAnalysis() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filtered?.map((row, idx) => {
+                    {paginated?.map((row, idx) => {
                       const preenchido = isPreenchido(row);
                       return (
                         <tr key={idx} className="hover:bg-gray-50">
@@ -627,12 +665,63 @@ export default function NCMAnalysis() {
                 </table>
               </div>
 
-              {!filtered || filtered.length === 0 ? (
+              {totalItems === 0 && (
                 <div className="text-center py-12">
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhum resultado encontrado</h3>
                   <p className="text-gray-600">Tente ajustar os filtros ou fazer novos uploads de arquivos.</p>
                 </div>
-              ) : null}
+              )}
+
+              {/* Paginação */}
+              {!showAll && totalPages > 1 && (
+                <div className="flex items-center justify-between border-t border-gray-100 pt-4 mt-2">
+                  <p className="text-sm text-gray-500">
+                    Exibindo {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, totalItems)} de {totalItems}
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={safePage === 1}
+                      className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+
+                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                      .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+                      .reduce<(number | "...")[]>((acc, p, i, arr) => {
+                        if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push("...");
+                        acc.push(p);
+                        return acc;
+                      }, [])
+                      .map((item, i) =>
+                        item === "..." ? (
+                          <span key={`ellipsis-${i}`} className="px-1 text-gray-400 text-sm">…</span>
+                        ) : (
+                          <button
+                            key={item}
+                            onClick={() => setCurrentPage(item as number)}
+                            className={`min-w-[32px] h-8 px-2 rounded text-sm font-medium transition-colors ${
+                              safePage === item
+                                ? "bg-primary text-primary-foreground"
+                                : "hover:bg-gray-100 text-gray-700"
+                            }`}
+                          >
+                            {item}
+                          </button>
+                        )
+                      )}
+
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={safePage === totalPages}
+                      className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
