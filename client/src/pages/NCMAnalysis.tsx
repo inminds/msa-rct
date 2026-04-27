@@ -282,21 +282,26 @@ export default function NCMAnalysis() {
     onError: () => toast({ title: "Erro", description: "Não foi possível iniciar a varredura.", variant: "destructive" }),
   });
 
-  // USER: solicitar varredura
+  // USER: solicitar varredura (mode ou ncms[] seletivo)
   const submitRequest = useMutation({
-    mutationFn: async (mode: "incompletos" | "todos") => {
+    mutationFn: async (payload: { mode: "incompletos" | "todos" } | { ncms: string[] }) => {
       const res = await fetch("/api/scan-requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.message); }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, payload) => {
       queryClient.invalidateQueries({ queryKey: ["/api/scan-requests/mine"] });
-      toast({ title: "Solicitação enviada!", description: "Aguardando aprovação da Thayssa." });
+      const isSeletivo = "ncms" in payload;
+      const desc = isSeletivo
+        ? `${(payload as any).ncms.length} NCM(s) selecionado(s). Aguardando aprovação da Thayssa.`
+        : "Aguardando aprovação da Thayssa.";
+      toast({ title: "Solicitação enviada!", description: desc });
+      if (isSeletivo) { setSelectedNCMs(new Set()); setSelectionMode(false); }
     },
     onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
   });
@@ -603,7 +608,7 @@ export default function NCMAnalysis() {
                       variant="outline"
                       className="text-blue-700 border-blue-300 hover:bg-blue-50"
                       disabled={submitRequest.isPending || hasActiveRequest}
-                      onClick={() => submitRequest.mutate("todos")}
+                      onClick={() => submitRequest.mutate({ mode: "todos" })}
                       title={hasActiveRequest ? "Você já tem uma solicitação ativa" : ""}
                     >
                       <Send className="w-4 h-4 mr-2" />
@@ -833,7 +838,7 @@ export default function NCMAnalysis() {
               size="sm"
               className="rounded-full bg-blue-600 hover:bg-blue-700 text-white h-8 px-4 text-xs"
               disabled={submitRequest.isPending || hasActiveRequest}
-              onClick={() => submitRequest.mutate("todos")}
+              onClick={() => submitRequest.mutate({ ncms: Array.from(selectedNCMs) })}
               title={hasActiveRequest ? "Você já tem uma solicitação ativa" : ""}
             >
               <Send className="w-3 h-3 mr-1.5" />

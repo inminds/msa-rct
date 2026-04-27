@@ -131,6 +131,7 @@ if (isDev) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       requested_by VARCHAR NOT NULL,
       mode VARCHAR NOT NULL DEFAULT 'incompletos',
+      ncms TEXT,
       status VARCHAR NOT NULL DEFAULT 'pending_thayssa',
       rejected_by VARCHAR,
       rejection_note TEXT,
@@ -163,6 +164,10 @@ if (isDev) {
   const userCols = (sqliteDb.pragma('table_info(users)') as { name: string }[]).map((c: any) => c.name);
   if (!userCols.includes('password_hash'))
     sqliteDb.exec("ALTER TABLE users ADD COLUMN password_hash VARCHAR");
+
+  const scanReqCols = (sqliteDb.pragma('table_info(scan_requests)') as { name: string }[]).map((c: any) => c.name);
+  if (!scanReqCols.includes('ncms'))
+    sqliteDb.exec("ALTER TABLE scan_requests ADD COLUMN ncms TEXT");
 
   console.log(`✅ SQLite development database initialized at: ${SQLITE_PATH}`);
 } else {

@@ -1228,10 +1228,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // POST /api/scan-requests — cria pedido (qualquer usuário autenticado)
   app.post("/api/scan-requests", isAuthenticated, async (req: any, res) => {
     try {
-      const { mode } = req.body as { mode?: string };
-      if (!mode || !["incompletos", "todos"].includes(mode)) {
-        return res.status(400).json({ message: "mode deve ser 'incompletos' ou 'todos'" });
+      const { mode, ncms } = req.body as { mode?: string; ncms?: string[] };
+      const isSeletivo = Array.isArray(ncms) && ncms.length > 0;
+      if (!isSeletivo && (!mode || !["incompletos", "todos"].includes(mode))) {
+        return res.status(400).json({ message: "mode deve ser 'incompletos', 'todos' ou fornecer ncms[]" });
       }
+      const effectiveMode = isSeletivo ? "selecionados" : mode!;
       const userId = (req.user as any).id;
       const active = await rawGet(
         "SELECT id FROM scan_requests WHERE requested_by = ? AND status IN ('pending_thayssa','pending_yuri')",
@@ -1239,13 +1241,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       if (active) { return res.status(409).json({ message: "Você já tem uma solicitação ativa." }); }
       const now = new Date().toISOString();
+      const ncmsJson = isSeletivo ? JSON.stringify(ncms) : null;
       const result = await rawRun(
-        "INSERT INTO scan_requests (requested_by, mode, status, created_at, updated_at) VALUES (?, ?, 'pending_thayssa', ?, ?)",
-        [userId, mode, now, now]
+        "INSERT INTO scan_requests (requested_by, mode, ncms, status, created_at, updated_at) VALUES (?, ?, ?, 'pending_thayssa', ?, ?)",
+        [userId, effectiveMode, ncmsJson, now, now]
       );
       const { id: srUserId, name: srUserName } = getUserInfo(req);
       logAudit(srUserId, srUserName, "SCAN_REQUESTED", "scan", {
-        mode,
+        mode: effectiveMode,
+        ncms: isSeletivo ? ncms : null,
         requestId: result.lastInsertRowid,
       });
       res.status(201).json({ id: result.lastInsertRowid, status: "pending_thayssa" });
@@ -1265,7 +1269,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ) as any;
       if (!row) return res.json(null);
       res.json({
-        id: row.id, requestedBy: row.requested_by, mode: row.mode, status: row.status,
+        id: row.id, requestedBy: row.requested_by, mode: row.mode,
+        ncms: row.ncms ? JSON.parse(row.ncms) : null,
+        status: row.status,
         rejectedBy: row.rejected_by, rejectionNote: row.rejection_note,
         createdAt: row.created_at, updatedAt: row.updated_at,
       });
@@ -1293,6 +1299,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         requestedBy: r.requested_by,
         requestedByName: `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() || r.requested_by,
         mode: r.mode,
+        ncms: r.ncms ? JSON.parse(r.ncms) : null,
         status: r.status,
         createdAt: r.created_at,
       })));
@@ -1330,7 +1337,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           catch { setActivePid(null); }
         }
         await rawRun("UPDATE scan_requests SET status='approved', updated_at=? WHERE id=?", [now, requestId]);
-        const args = ["econet_scraper.py", ...(row.mode === "todos" ? ["--todos"] : [])];
+        let args: string[];
+        if (row.ncms) {
+          const ncmList: string[] = JSON.parse(row.ncms);
+          args = ["econet_scraper.py", "--ncms", ncmList.join(",")];
+        } else {
+          args = ["econet_scraper.py", ...(row.mode === "todos" ? ["--todos"] : [])];
+        }
         const logDir2 = path.resolve(".data");
         if (!fs.existsSync(logDir2)) fs.mkdirSync(logDir2, { recursive: true });
         const logFd2 = fs.openSync(path.join(logDir2, "scraper.log"), "a");
