@@ -750,14 +750,43 @@ def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict]):
 
 
 async def main():
-    modo_todos = "--todos" in sys.argv
-    entradas = ler_ncms(apenas_incompletos=not modo_todos)
-    ncms = [ncm for _, ncm in entradas]
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--todos", action="store_true", help="Varre todos os NCMs, incluindo já preenchidos")
+    parser.add_argument("--ncms", type=str, default="", help="Lista de NCMs separados por vírgula para varredura seletiva")
+    args = parser.parse_args()
 
-    if modo_todos:
-        print(f"🔄 Modo --todos: {len(entradas)} NCMs serão verificados (incluindo já preenchidos)")
+    if args.ncms:
+        # Modo seletivo: apenas os NCMs informados via --ncms
+        ncms_filtro = set(c.strip().replace(".", "") for c in args.ncms.split(",") if c.strip())
+        todas = ler_ncms(apenas_incompletos=False)
+        entradas = [(row, ncm) for row, ncm in todas if str(ncm) in ncms_filtro]
+        total = len(entradas)
+        print(f"\n{'='*55}")
+        print(f"🎯 MODO SELETIVO — {total} NCM(s) na fila")
+        print(f"{'='*55}")
+        for i, (_, ncm) in enumerate(entradas, 1):
+            print(f"   {i:>2}. {formatar_ncm(ncm)}  ({ncm})")
+        print(f"{'='*55}\n")
     else:
-        print(f"📋 {len(entradas)} NCMs sem dados encontrados: {[formatar_ncm(n) for n in ncms]}")
+        modo_todos = args.todos
+        entradas = ler_ncms(apenas_incompletos=not modo_todos)
+        total = len(entradas)
+        ncms = [ncm for _, ncm in entradas]
+        if modo_todos:
+            print(f"\n{'='*55}")
+            print(f"🔄 MODO TODOS — {total} NCM(s) na fila (incluindo já preenchidos)")
+            print(f"{'='*55}")
+            for i, n in enumerate(ncms, 1):
+                print(f"   {i:>2}. {formatar_ncm(n)}  ({n})")
+            print(f"{'='*55}\n")
+        else:
+            print(f"\n{'='*55}")
+            print(f"📋 MODO PENDENTES — {total} NCM(s) sem dados encontrados")
+            print(f"{'='*55}")
+            for i, n in enumerate(ncms, 1):
+                print(f"   {i:>2}. {formatar_ncm(n)}  ({n})")
+            print(f"{'='*55}\n")
 
     if not entradas:
         print("✅ Nenhum NCM para processar. Encerrando.")
@@ -803,13 +832,22 @@ async def main():
 
         busca_src = await navegar_pis_cofins(page)
 
+        total = len(entradas)
         resultados = []
-        for _, ncm in entradas:
+        for idx, (_, ncm) in enumerate(entradas, 1):
             ncm_fmt = formatar_ncm(ncm)
+            print(f"\n{'─'*55}")
+            print(f"▶  Varrendo {idx}/{total}: {ncm_fmt}  ({ncm})")
+            ncms_restantes = [formatar_ncm(n) for _, n in entradas[idx:]]
+            if ncms_restantes:
+                print(f"   Restantes: {', '.join(ncms_restantes)}")
+            else:
+                print(f"   Restantes: (nenhum — este é o último)")
+            print(f"{'─'*55}")
             try:
                 dados = await buscar_ncm(page, ncm_fmt, busca_src)
             except Exception as e:
-                print(f"  ERRO no NCM {ncm_fmt}: {e}")
+                print(f"  ❌ ERRO no NCM {ncm_fmt}: {e}")
                 dados = {
                     "descricao": "", "pis_cum": "", "cofins_cum": "",
                     "pis_ncum": "", "cofins_ncum": "", "regime": "",

@@ -116,6 +116,8 @@ export default function NCMAnalysis() {
   const [statusFilter, setStatusFilter] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [selectedNCMs, setSelectedNCMs] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
   const [selectedNCM, setSelectedNCM] = useState<NCMRow | null>(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -259,6 +261,26 @@ export default function NCMAnalysis() {
     onError: () => toast({ title: "Erro", description: "Não foi possível iniciar a varredura.", variant: "destructive" }),
   });
 
+  // ADMIN: varredura seletiva
+  const triggerSelected = useMutation({
+    mutationFn: async (ncms: string[]) => {
+      const res = await fetch("/api/ncm-scan/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ mode: "selecionados", ncms }),
+      });
+      if (!res.ok) throw new Error("Falha ao iniciar varredura");
+      return res.json();
+    },
+    onSuccess: (_, ncms) => {
+      setScanDone(false);
+      setSelectedNCMs(new Set());
+      startPolling(`Buscando ${ncms.length} NCM(s) selecionado(s) no Econet...`);
+    },
+    onError: () => toast({ title: "Erro", description: "Não foi possível iniciar a varredura.", variant: "destructive" }),
+  });
+
   // USER: solicitar varredura
   const submitRequest = useMutation({
     mutationFn: async (mode: "incompletos" | "todos") => {
@@ -327,8 +349,8 @@ export default function NCMAnalysis() {
   const normalize = (s: string) =>
     s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-  // Reset página ao mudar filtros ou tamanho da página
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, statusFilter, pageSize]);
+  // Reset página e seleção ao mudar filtros ou tamanho da página
+  useEffect(() => { setCurrentPage(1); setSelectedNCMs(new Set()); setSelectionMode(false); }, [searchTerm, statusFilter, pageSize]);
 
   const filtered = ncmRows?.filter((row) => {
     const term = normalize(searchTerm.trim());
@@ -354,6 +376,31 @@ export default function NCMAnalysis() {
   const paginated = showAll
     ? filtered
     : filtered?.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // Helpers de seleção — declarados APÓS paginated
+  const pageNCMs = paginated?.map(r => r.NCM) ?? [];
+  const allPageSelected = pageNCMs.length > 0 && pageNCMs.every(ncm => selectedNCMs.has(ncm));
+  const somePageSelected = pageNCMs.some(ncm => selectedNCMs.has(ncm));
+
+  function toggleRow(ncm: string) {
+    setSelectedNCMs(prev => {
+      const next = new Set(prev);
+      next.has(ncm) ? next.delete(ncm) : next.add(ncm);
+      return next;
+    });
+  }
+
+  function togglePage() {
+    setSelectedNCMs(prev => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        pageNCMs.forEach(ncm => next.delete(ncm));
+      } else {
+        pageNCMs.forEach(ncm => next.add(ncm));
+      }
+      return next;
+    });
+  }
 
   if (isLoading) {
     return (
@@ -527,15 +574,6 @@ export default function NCMAnalysis() {
                   <>
                     <Button
                       variant="outline"
-                      className="text-amber-700 border-amber-300 hover:bg-amber-50"
-                      disabled={triggerScan.isPending || scanning}
-                      onClick={() => triggerScan.mutate("incompletos")}
-                    >
-                      {scanning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ScanLine className="w-4 h-4 mr-2" />}
-                      Buscar Pendentes
-                    </Button>
-                    <Button
-                      variant="outline"
                       className="text-blue-700 border-blue-300 hover:bg-blue-50"
                       disabled={triggerScan.isPending || scanning}
                       onClick={() => triggerScan.mutate("todos")}
@@ -543,19 +581,22 @@ export default function NCMAnalysis() {
                       {scanning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ScanSearch className="w-4 h-4 mr-2" />}
                       Buscar Todos
                     </Button>
+                    <Button
+                      variant="outline"
+                      className={selectionMode
+                        ? "text-gray-700 border-gray-400 bg-gray-100 hover:bg-gray-200"
+                        : "text-indigo-700 border-indigo-300 hover:bg-indigo-50"}
+                      onClick={() => {
+                        setSelectionMode(v => !v);
+                        setSelectedNCMs(new Set());
+                      }}
+                    >
+                      <ScanLine className="w-4 h-4 mr-2" />
+                      {selectionMode ? "Cancelar Seleção" : "Selecionar NCMs"}
+                    </Button>
                   </>
                 ) : (
                   <>
-                    <Button
-                      variant="outline"
-                      className="text-amber-700 border-amber-300 hover:bg-amber-50"
-                      disabled={submitRequest.isPending || hasActiveRequest}
-                      onClick={() => submitRequest.mutate("incompletos")}
-                      title={hasActiveRequest ? "Você já tem uma solicitação ativa" : ""}
-                    >
-                      <Send className="w-4 h-4 mr-2" />
-                      Solicitar — Pendentes
-                    </Button>
                     <Button
                       variant="outline"
                       className="text-blue-700 border-blue-300 hover:bg-blue-50"
@@ -564,7 +605,20 @@ export default function NCMAnalysis() {
                       title={hasActiveRequest ? "Você já tem uma solicitação ativa" : ""}
                     >
                       <Send className="w-4 h-4 mr-2" />
-                      Solicitar — Todos
+                      Solicitar Varredura
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className={selectionMode
+                        ? "text-gray-700 border-gray-400 bg-gray-100 hover:bg-gray-200"
+                        : "text-indigo-700 border-indigo-300 hover:bg-indigo-50"}
+                      onClick={() => {
+                        setSelectionMode(v => !v);
+                        setSelectedNCMs(new Set());
+                      }}
+                    >
+                      <ScanLine className="w-4 h-4 mr-2" />
+                      {selectionMode ? "Cancelar Seleção" : "Selecionar NCMs"}
                     </Button>
                   </>
                 )}
@@ -604,6 +658,18 @@ export default function NCMAnalysis() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
+                      {selectionMode && (
+                        <th className="px-4 py-3 w-10">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300 text-primary cursor-pointer"
+                            checked={allPageSelected}
+                            ref={el => { if (el) el.indeterminate = somePageSelected && !allPageSelected; }}
+                            onChange={togglePage}
+                            title="Selecionar página atual"
+                          />
+                        </th>
+                      )}
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NCM</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PIS Cum.</th>
@@ -618,8 +684,19 @@ export default function NCMAnalysis() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {paginated?.map((row, idx) => {
                       const preenchido = isPreenchido(row);
+                      const isSelected = selectedNCMs.has(row.NCM);
                       return (
-                        <tr key={idx} className="hover:bg-gray-50">
+                        <tr key={idx} className={`hover:bg-gray-50 ${selectionMode && isSelected ? "bg-blue-50" : ""}`}>
+                          {selectionMode && (
+                            <td className="px-4 py-4 w-10">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-gray-300 text-primary cursor-pointer"
+                                checked={isSelected}
+                                onChange={() => toggleRow(row.NCM)}
+                              />
+                            </td>
+                          )}
                           <td className="px-4 py-4 whitespace-nowrap">
                             <div className="font-mono text-sm font-medium text-gray-900">{row.NCM}</div>
                             {row["NCM Econet"] && row["NCM Econet"] !== row.NCM && (
@@ -728,6 +805,45 @@ export default function NCMAnalysis() {
       </main>
 
       <ScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
+
+      {/* Barra flutuante de varredura seletiva */}
+      {selectionMode && selectedNCMs.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-white border border-gray-200 shadow-lg rounded-full px-5 py-3">
+          <span className="text-sm font-medium text-gray-700">
+            <span className="text-primary font-bold">{selectedNCMs.size}</span> NCM{selectedNCMs.size !== 1 ? "s" : ""} selecionado{selectedNCMs.size !== 1 ? "s" : ""}
+          </span>
+          <div className="w-px h-5 bg-gray-200" />
+          {isAdmin ? (
+            <Button
+              size="sm"
+              className="rounded-full bg-blue-600 hover:bg-blue-700 text-white h-8 px-4 text-xs"
+              disabled={triggerSelected.isPending || scanning}
+              onClick={() => triggerSelected.mutate(Array.from(selectedNCMs))}
+            >
+              {scanning ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> : <ScanSearch className="w-3 h-3 mr-1.5" />}
+              Buscar Selecionados
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              className="rounded-full bg-blue-600 hover:bg-blue-700 text-white h-8 px-4 text-xs"
+              disabled={submitRequest.isPending || hasActiveRequest}
+              onClick={() => submitRequest.mutate("todos")}
+              title={hasActiveRequest ? "Você já tem uma solicitação ativa" : ""}
+            >
+              <Send className="w-3 h-3 mr-1.5" />
+              Solicitar Varredura
+            </Button>
+          )}
+          <button
+            onClick={() => setSelectedNCMs(new Set())}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+            title="Limpar seleção"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Modal de detalhe do NCM — estilo Econet */}
       <Dialog open={!!selectedNCM} onOpenChange={() => setSelectedNCM(null)}>

@@ -924,12 +924,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/ncm-scan/trigger — triggers the econet_scraper.py process
-  // mode: "incompletos" (default) | "todos"
+  // mode: "incompletos" (default) | "todos" | "selecionados" (when ncms[] provided)
   app.post("/api/ncm-scan/trigger", isAuthenticated, async (req: any, res) => {
     if (process.env.NODE_ENV === 'production') return res.status(503).json({ message: 'Não disponível em produção' });
     try {
-      const { mode } = req.body as { mode?: "incompletos" | "todos" };
-      const args = ["econet_scraper.py", ...(mode === "todos" ? ["--todos"] : [])];
+      const { mode, ncms } = req.body as { mode?: "incompletos" | "todos" | "selecionados"; ncms?: string[] };
+
+      // Build scraper args
+      let args: string[];
+      if (ncms && ncms.length > 0) {
+        args = ["econet_scraper.py", "--ncms", ncms.join(",")];
+      } else {
+        args = ["econet_scraper.py", ...(mode === "todos" ? ["--todos"] : [])];
+      }
 
       const logDir = path.resolve(".data");
       if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
@@ -963,10 +970,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       child.unref();
       if (child.pid) setActivePid(child.pid);
 
-      console.log(`[ncm-scan] econet_scraper triggered (pid: ${child.pid}) — mode: ${mode ?? "incompletos"} — log: .data/scraper.log`);
+      const modeLabel = ncms?.length ? `selecionados (${ncms.length})` : mode ?? "incompletos";
+      console.log(`[ncm-scan] econet_scraper triggered (pid: ${child.pid}) — mode: ${modeLabel} — log: .data/scraper.log`);
       res.json({
         success: true,
-        message: mode === "todos" ? "Varredura completa iniciada" : "Varredura de NCMs incompletos iniciada",
+        message: ncms?.length
+          ? `Varredura de ${ncms.length} NCM(s) selecionado(s) iniciada`
+          : mode === "todos" ? "Varredura completa iniciada" : "Varredura de NCMs incompletos iniciada",
         pid: child.pid,
       });
     } catch (error) {
