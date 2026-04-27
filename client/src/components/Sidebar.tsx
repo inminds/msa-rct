@@ -21,11 +21,11 @@ const navigation = [
   { name: "NCMs Extraídos", href: "/ncm-analysis", icon: List },
   { name: "Análise Tributária", href: "/tax-analysis", icon: FileText },
   { name: "Relatórios", href: "/reports", icon: BarChart3 },
-  { name: "Usuários", href: "/users", icon: Users },
   { name: "Mudanças em NCMs", href: "/rpa-dashboard", icon: GitCompareArrows },
 ];
 
 const adminNavigation = [
+  { name: "Usuários", href: "/users", icon: Users },
   { name: "Logs de Auditoria", href: "/audit-logs", icon: ScrollText },
 ];
 
