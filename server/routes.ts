@@ -1173,9 +1173,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!lastLog) return res.json(null);
 
-      // Pega o lote mais recente de mudanças (mesmo scan_date)
+      // Pega somente mudanças criadas depois do disparo desta varredura.
       const latestBatch = await rawGet(
-        "SELECT scan_date FROM ncm_changes ORDER BY scan_date DESC LIMIT 1"
+        `SELECT scan_date
+         FROM ncm_changes
+         WHERE datetime(scan_date) >= datetime(?)
+         ORDER BY scan_date DESC
+         LIMIT 1`,
+        [lastLog.created_at]
       ) as any;
 
       let changes: any[] = [];
@@ -1806,10 +1811,6 @@ async function processFileAsync(uploadId: string, fileContent: string, fileType:
           if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
           const logFd = fs.openSync(path.join(logDir, "scraper.log"), "a");
 
-          // Snapshot antes da varredura para detectar mudanças
-          let snapshot: Record<string, string>[] = [];
-          try { snapshot = await readNCMsFromExcel(); } catch {}
-
           const child = spawn(PYTHON, ["econet_scraper.py"], {
             cwd: path.resolve("."),
             env: { ...process.env, PYTHONUNBUFFERED: "1" },
@@ -1821,14 +1822,6 @@ async function processFileAsync(uploadId: string, fileContent: string, fileType:
             try { fs.closeSync(logFd); } catch {}
             setActivePid(null);
             console.log(`[processFile] Auto-scraper finalizado (code: ${code})`);
-            if (snapshot.length > 0) {
-              try {
-                const after = await readNCMsFromExcel();
-                await detectAndSaveChanges(snapshot, after);
-              } catch (err) {
-                console.error("[processFile] Erro ao detectar mudanças pós-auto-scan:", err);
-              }
-            }
           });
 
           child.unref();
