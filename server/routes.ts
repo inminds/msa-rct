@@ -29,6 +29,69 @@ function isInternalRequest(req: any): boolean {
 
 // ── Audit logging helpers ────────────────────────────────────────────────────
 
+async function getUploadsWithDetails(limit = 50) {
+  const safeLimit = Math.max(1, Math.min(limit, 500));
+  const uploads = await rawAll(
+    `SELECT
+       id,
+       filename,
+       file_type AS "fileType",
+       description,
+       uploaded_at AS "uploadedAt",
+       user_id AS "userId",
+       status,
+       processed_at AS "processedAt",
+       error_message AS "errorMessage"
+     FROM uploads
+     ORDER BY uploaded_at DESC
+     LIMIT ?`,
+    [safeLimit]
+  ) as any[];
+
+  if (!uploads.length) return [];
+
+  const uploadIds = uploads.map((upload) => upload.id);
+  const uploadPlaceholders = uploadIds.map(() => "?").join(",");
+  const ncmRows = await rawAll(
+    `SELECT upload_id, ncm_code
+     FROM ncm_items
+     WHERE upload_id IN (${uploadPlaceholders})
+     ORDER BY created_at ASC`,
+    uploadIds
+  ) as any[];
+
+  const ncmsByUpload: Record<string, string[]> = {};
+  for (const row of ncmRows) {
+    (ncmsByUpload[row.upload_id] ??= []).push(row.ncm_code);
+  }
+
+  const userIds = Array.from(new Set(uploads.map((upload) => upload.userId).filter(Boolean)));
+  const usersById: Record<string, string> = {};
+
+  if (userIds.length) {
+    const userPlaceholders = userIds.map(() => "?").join(",");
+    const userRows = await rawAll(
+      `SELECT id, first_name, last_name, email
+       FROM users
+       WHERE id IN (${userPlaceholders})`,
+      userIds
+    ) as any[];
+
+    for (const user of userRows) {
+      usersById[user.id] =
+        `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() ||
+        user.email ||
+        user.id;
+    }
+  }
+
+  return uploads.map((upload) => ({
+    ...upload,
+    uploaderName: usersById[upload.userId] ?? upload.userId ?? "-",
+    extractedNcms: ncmsByUpload[upload.id] ?? [],
+  }));
+}
+
 function getUserInfo(req: any): { id: string; name: string } {
   const u = req.user as any;
   const id = u?.id ?? u?.claims?.sub ?? "unknown";
@@ -274,8 +337,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // All uploads (public for demo)
-  app.get('/api/uploads', async (req, res) => {
+  // All uploads with uploader and extracted NCMs
+  app.get('/api/uploads', isAuthenticated, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      res.json(await getUploadsWithDetails(limit));
+    } catch (error) {
+      console.error("Error fetching uploads:", error);
+      res.status(500).json({ message: "Failed to fetch uploads" });
+    }
+  });
+
+  // Legacy uploads shape kept away from the public route.
+  app.get('/api/uploads-legacy', isAuthenticated, async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 50;
       const uploads = await storage.getRecentUploads(limit) as any[];
@@ -294,7 +368,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Nomes dos usuários que fizeram upload — uma query só
-      const userIds = [...new Set(uploads.map(u => u.userId).filter(Boolean))];
+      const userIds = Array.from(new Set(uploads.map(u => u.userId).filter(Boolean)));
       const usersMap: Record<string, string> = {};
       if (userIds.length) {
         const uPlaceholders = userIds.map(() => "?").join(",");
@@ -602,8 +676,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get uploads for user
-  app.get('/api/uploads', isAuthenticated, async (req: any, res) => {
+  // Get uploads for user (legacy shape)
+  app.get('/api/uploads-user-legacy', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).id ?? (req.user as any).claims?.sub;
       const uploads = await storage.getUploadsByUser(userId);

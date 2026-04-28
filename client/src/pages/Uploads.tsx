@@ -42,7 +42,22 @@ function getFileTypeIcon(fileType: string) {
 function UploadRow({ upload }: { upload: any }) {
   const [ncmsExpanded, setNcmsExpanded] = useState(false);
 
-  const ncms: string[] = upload.extractedNcms ?? [];
+  const fileType = upload.fileType ?? upload.file_type ?? "";
+  const uploadedAt = upload.uploadedAt ?? upload.uploaded_at;
+  const errorMessage = upload.errorMessage ?? upload.error_message;
+  const uploaderName =
+    upload.uploaderName ??
+    upload.uploader_name ??
+    upload.user?.firstName ??
+    upload.user?.email ??
+    upload.userId ??
+    upload.user_id ??
+    "-";
+  const ncms: string[] =
+    upload.extractedNcms ??
+    upload.extracted_ncms ??
+    upload.ncms ??
+    [];
   const visible = ncmsExpanded ? ncms : ncms.slice(0, MAX_CHIPS_VISIBLE);
   const hidden = ncms.length - MAX_CHIPS_VISIBLE;
 
@@ -51,20 +66,20 @@ function UploadRow({ upload }: { upload: any }) {
       {/* Linha principal */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="text-2xl shrink-0">{getFileTypeIcon(upload.fileType)}</span>
+          <span className="text-2xl shrink-0">{getFileTypeIcon(fileType)}</span>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900 truncate" data-testid={`filename-${upload.id}`}>
               {upload.filename}
             </p>
-            {upload.errorMessage && (
+            {errorMessage && (
               <p className="text-xs text-red-600 mt-0.5" data-testid={`error-${upload.id}`}>
-                {upload.errorMessage}
+                {errorMessage}
               </p>
             )}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Badge variant="outline" className="text-xs font-mono">{upload.fileType}</Badge>
+          <Badge variant="outline" className="text-xs font-mono">{fileType}</Badge>
           {getStatusBadge(upload.status)}
         </div>
       </div>
@@ -77,8 +92,8 @@ function UploadRow({ upload }: { upload: any }) {
         </span>
         <span className="flex items-center gap-1">
           <Clock className="w-3.5 h-3.5" />
-          <span className="font-medium text-gray-700">{formatUTC(upload.uploadedAt, "dd/MM/yyyy HH:mm")}</span>
-          <span className="text-gray-400">({distanceUTC(upload.uploadedAt)})</span>
+          <span className="font-medium text-gray-700">{formatUTC(uploadedAt, "dd/MM/yyyy HH:mm")}</span>
+          <span className="text-gray-400">({distanceUTC(uploadedAt)})</span>
         </span>
         {upload.description && (
           <span className="flex items-center gap-1">
