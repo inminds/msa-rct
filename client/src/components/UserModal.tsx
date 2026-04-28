@@ -68,7 +68,7 @@ export function UserModal({ open, onClose, editUser }: Props) {
         <DialogHeader>
           <DialogTitle>{isEditing ? "Editar Usuário" : "Novo Usuário"}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 py-2">
+        <form id="user-form" onSubmit={e => { e.preventDefault(); saveMutation.mutate(); }} className="space-y-4 py-2">
           <div className="space-y-1">
             <Label>Tipo</Label>
             <Select value={form.role} onValueChange={v => set("role", v as "USER" | "ADMIN")}>
@@ -82,16 +82,16 @@ export function UserModal({ open, onClose, editUser }: Props) {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Nome</Label>
-              <Input placeholder="Nome" value={form.firstName} onChange={e => set("firstName", e.target.value)} />
+              <Input placeholder="Nome" value={form.firstName} onChange={e => set("firstName", e.target.value)} required />
             </div>
             <div className="space-y-1">
               <Label>Sobrenome</Label>
-              <Input placeholder="Sobrenome" value={form.lastName} onChange={e => set("lastName", e.target.value)} />
+              <Input placeholder="Sobrenome" value={form.lastName} onChange={e => set("lastName", e.target.value)} required />
             </div>
           </div>
           <div className="space-y-1">
             <Label>Email</Label>
-            <Input type="email" placeholder="email@exemplo.com" value={form.email} onChange={e => set("email", e.target.value)} />
+            <Input type="email" placeholder="email@exemplo.com" value={form.email} onChange={e => set("email", e.target.value)} required />
           </div>
           <div className="space-y-1">
             <Label>{isEditing ? "Nova senha (deixe vazio para manter)" : "Senha"}</Label>
@@ -113,10 +113,10 @@ export function UserModal({ open, onClose, editUser }: Props) {
               </button>
             </div>
           </div>
-        </div>
+        </form>
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
-          <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+          <Button type="submit" form="user-form" disabled={saveMutation.isPending}>
             {saveMutation.isPending ? "Salvando..." : "Salvar"}
           </Button>
         </DialogFooter>

@@ -1150,7 +1150,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/users", isAdmin, async (req: any, res) => {
     try {
       const { firstName, lastName, email, role, password } = req.body;
-      if (!firstName || !password) return res.status(400).json({ message: "nome e senha são obrigatórios" });
+      if (!firstName || !lastName || !email || !password) {
+        return res.status(400).json({ message: "Todos os campos são obrigatórios" });
+      }
       // id is auto-generated — derive a short slug from email prefix, falling back to UUID
       const rawId = email
         ? email.split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "")
