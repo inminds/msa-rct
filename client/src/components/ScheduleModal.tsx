@@ -3,13 +3,17 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { CalendarClock } from "lucide-react";
+import { CalendarClock, History, User2, XCircle, CheckCircle2 } from "lucide-react";
+import { formatUTC, distanceUTC } from "@/lib/dateUtils";
+
+// ── Interfaces ────────────────────────────────────────────────────────────────
 
 interface ScheduleConfig {
   enabled: boolean;
@@ -20,6 +24,16 @@ interface ScheduleConfig {
   minute: number;
   mode: "incompletos" | "todos";
 }
+
+interface ScheduleHistoryEntry {
+  id: number;
+  createdAt: string;
+  userName: string;
+  action: "SCHEDULE_CONFIGURED" | "SCHEDULE_CANCELLED";
+  details: Record<string, any> | null;
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const DAYS_OF_WEEK = [
   { value: "0", label: "Domingo" },
@@ -36,17 +50,21 @@ const DAYS_OF_MONTH = Array.from({ length: 28 }, (_, i) => ({
   label: `Dia ${i + 1}`,
 }));
 
-const HOURS = Array.from({ length: 24 }, (_, i) => ({
-  value: String(i),
-  label: String(i).padStart(2, "0"),
-}));
+const FREQ_LABEL: Record<string, string> = { weekly: "Semanal", monthly: "Mensal" };
+const MODE_LABEL: Record<string, string> = { incompletos: "Pendentes", todos: "Todos os NCMs" };
+const DOW_LABEL = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
-const MINUTES = [
-  { value: "0", label: "00" },
-  { value: "15", label: "15" },
-  { value: "30", label: "30" },
-  { value: "45", label: "45" },
-];
+const DEFAULT: ScheduleConfig = {
+  enabled: false,
+  frequency: "weekly",
+  dayOfWeek: 1,
+  dayOfMonth: 1,
+  hour: 8,
+  minute: 0,
+  mode: "incompletos",
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function nextExecution(cfg: ScheduleConfig): string {
   if (!cfg.enabled) return "—";
@@ -72,20 +90,26 @@ function nextExecution(cfg: ScheduleConfig): string {
   });
 }
 
+function formatHistoryDetails(entry: ScheduleHistoryEntry): string {
+  if (entry.action === "SCHEDULE_CANCELLED") return "Agendamento cancelado";
+  const d = entry.details;
+  if (!d) return "—";
+  if (!d.enabled) return "Agendamento desativado";
+  const freq = FREQ_LABEL[d.frequency] ?? d.frequency;
+  const day = d.frequency === "weekly"
+    ? DOW_LABEL[d.dayOfWeek] ?? `Dia ${d.dayOfWeek}`
+    : `Dia ${d.dayOfMonth}`;
+  const time = `${String(d.hour).padStart(2, "0")}:${String(d.minute).padStart(2, "0")}`;
+  const mode = MODE_LABEL[d.mode] ?? d.mode;
+  return `${freq} • ${day} • ${time} • ${mode}`;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 interface Props {
   open: boolean;
   onClose: () => void;
 }
-
-const DEFAULT: ScheduleConfig = {
-  enabled: false,
-  frequency: "weekly",
-  dayOfWeek: 1,
-  dayOfMonth: 1,
-  hour: 8,
-  minute: 0,
-  mode: "incompletos",
-};
 
 export function ScheduleModal({ open, onClose }: Props) {
   const { toast } = useToast();
@@ -94,6 +118,11 @@ export function ScheduleModal({ open, onClose }: Props) {
 
   const { data: saved, isLoading } = useQuery<ScheduleConfig | null>({
     queryKey: ["/api/ncm-scan/schedule"],
+    enabled: open,
+  });
+
+  const { data: scheduleHistory = [] } = useQuery<ScheduleHistoryEntry[]>({
+    queryKey: ["/api/ncm-scan/schedule/history"],
     enabled: open,
   });
 
@@ -114,6 +143,7 @@ export function ScheduleModal({ open, onClose }: Props) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ncm-scan/schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ncm-scan/schedule/history"] });
       toast({ title: "Agendamento salvo!", description: cfg.enabled ? `Próxima execução: ${nextExecution(cfg)}` : "Agendamento desativado." });
       onClose();
     },
@@ -127,7 +157,7 @@ export function ScheduleModal({ open, onClose }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarClock className="w-5 h-5 text-blue-600" />
@@ -135,111 +165,189 @@ export function ScheduleModal({ open, onClose }: Props) {
           </DialogTitle>
         </DialogHeader>
 
-        {isLoading ? (
-          <div className="py-8 text-center text-gray-500 text-sm">Carregando configuração...</div>
-        ) : (
-          <div className="space-y-5 py-2">
-            {/* Toggle */}
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Agendamento ativo</Label>
-              <Switch
-                checked={cfg.enabled}
-                onCheckedChange={v => set("enabled", v)}
-              />
-            </div>
+        <Tabs defaultValue="config" className="w-full">
+          {/* Tab triggers */}
+          <TabsList className="w-full grid grid-cols-2 mb-4">
+            <TabsTrigger value="config" className="flex items-center gap-1.5">
+              <CalendarClock className="w-3.5 h-3.5" />
+              Configuração
+            </TabsTrigger>
+            <TabsTrigger value="history" className="flex items-center gap-1.5">
+              <History className="w-3.5 h-3.5" />
+              Histórico
+              {scheduleHistory.length > 0 && (
+                <span className="ml-1 rounded-full bg-blue-100 text-blue-600 text-xs px-1.5 py-0.5 font-semibold leading-none">
+                  {scheduleHistory.length}
+                </span>
+              )}
+            </TabsTrigger>
+          </TabsList>
 
-            <div className={cfg.enabled ? "" : "opacity-40 pointer-events-none"}>
-              {/* Frequência */}
-              <div className="space-y-1 mb-4">
-                <Label className="text-sm">Frequência</Label>
-                <Select value={cfg.frequency} onValueChange={v => set("frequency", v as "weekly" | "monthly")}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="weekly">Semanal</SelectItem>
-                    <SelectItem value="monthly">Mensal</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+          {/* ── Aba: Configuração ── */}
+          <TabsContent value="config">
+            {isLoading ? (
+              <div className="py-8 text-center text-gray-500 text-sm">Carregando configuração...</div>
+            ) : (
+              <div className="space-y-5">
+                {/* Toggle */}
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Agendamento ativo</Label>
+                  <Switch
+                    checked={cfg.enabled}
+                    onCheckedChange={v => set("enabled", v)}
+                  />
+                </div>
 
-              {/* Dia */}
-              <div className="space-y-1 mb-4">
-                <Label className="text-sm">
-                  {cfg.frequency === "weekly" ? "Dia da semana" : "Dia do mês"}
-                </Label>
-                {cfg.frequency === "weekly" ? (
-                  <Select value={String(cfg.dayOfWeek)} onValueChange={v => set("dayOfWeek", Number(v))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {DAYS_OF_WEEK.map(d => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Select value={String(cfg.dayOfMonth)} onValueChange={v => set("dayOfMonth", Number(v))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {DAYS_OF_MONTH.map(d => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-
-              {/* Horário */}
-              <div className="space-y-1 mb-4">
-                <Label className="text-sm">Horário</Label>
-                <div className="flex items-center gap-2">
-                  <div className="relative w-24">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={23}
-                      value={cfg.hour}
-                      onChange={e => {
-                        const v = Math.min(23, Math.max(0, Number(e.target.value)));
-                        set("hour", v);
-                      }}
-                      className="pr-7 text-center"
-                    />
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">h</span>
+                <div className={cfg.enabled ? "" : "opacity-40 pointer-events-none"}>
+                  {/* Frequência */}
+                  <div className="space-y-1 mb-4">
+                    <Label className="text-sm">Frequência</Label>
+                    <Select value={cfg.frequency} onValueChange={v => set("frequency", v as "weekly" | "monthly")}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="weekly">Semanal</SelectItem>
+                        <SelectItem value="monthly">Mensal</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <span className="text-gray-500 font-medium">:</span>
-                  <div className="relative w-24">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={59}
-                      value={cfg.minute}
-                      onChange={e => {
-                        const v = Math.min(59, Math.max(0, Number(e.target.value)));
-                        set("minute", v);
-                      }}
-                      className="pr-9 text-center"
-                    />
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">min</span>
+
+                  {/* Dia */}
+                  <div className="space-y-1 mb-4">
+                    <Label className="text-sm">
+                      {cfg.frequency === "weekly" ? "Dia da semana" : "Dia do mês"}
+                    </Label>
+                    {cfg.frequency === "weekly" ? (
+                      <Select value={String(cfg.dayOfWeek)} onValueChange={v => set("dayOfWeek", Number(v))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {DAYS_OF_WEEK.map(d => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Select value={String(cfg.dayOfMonth)} onValueChange={v => set("dayOfMonth", Number(v))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {DAYS_OF_MONTH.map(d => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+
+                  {/* Horário */}
+                  <div className="space-y-1 mb-4">
+                    <Label className="text-sm">Horário</Label>
+                    <div className="flex items-center gap-2">
+                      <div className="relative w-24">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={23}
+                          value={cfg.hour}
+                          onChange={e => {
+                            const v = Math.min(23, Math.max(0, Number(e.target.value)));
+                            set("hour", v);
+                          }}
+                          className="pr-7 text-center"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">h</span>
+                      </div>
+                      <span className="text-gray-500 font-medium">:</span>
+                      <div className="relative w-24">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={59}
+                          value={cfg.minute}
+                          onChange={e => {
+                            const v = Math.min(59, Math.max(0, Number(e.target.value)));
+                            set("minute", v);
+                          }}
+                          className="pr-9 text-center"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">min</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-400">Hora: 0–23 · Minuto: 0–59</p>
+                  </div>
+
+                  {/* Modo */}
+                  <div className="space-y-1 mb-4">
+                    <Label className="text-sm">Modo de varredura</Label>
+                    <Select value={cfg.mode} onValueChange={v => set("mode", v as "incompletos" | "todos")}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="incompletos">Buscar Pendentes</SelectItem>
+                        <SelectItem value="todos">Buscar Todos (detecta mudanças)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Próxima execução */}
+                  <div className="rounded-md bg-blue-50 border border-blue-100 px-3 py-2 text-sm text-blue-800">
+                    <span className="font-medium">Próxima execução:</span>{" "}
+                    {nextExecution(cfg)}
                   </div>
                 </div>
-                <p className="text-xs text-gray-400">Hora: 0–23 · Minuto: 0–59</p>
               </div>
+            )}
+          </TabsContent>
 
-              {/* Modo */}
-              <div className="space-y-1 mb-4">
-                <Label className="text-sm">Modo de varredura</Label>
-                <Select value={cfg.mode} onValueChange={v => set("mode", v as "incompletos" | "todos")}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="incompletos">Buscar Pendentes</SelectItem>
-                    <SelectItem value="todos">Buscar Todos (detecta mudanças)</SelectItem>
-                  </SelectContent>
-                </Select>
+          {/* ── Aba: Histórico ── */}
+          <TabsContent value="history">
+            {scheduleHistory.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3 text-gray-400">
+                <History className="w-10 h-10 text-gray-200" />
+                <p className="text-sm font-medium text-gray-500">Nenhuma configuração registrada</p>
+                <p className="text-xs text-center text-gray-400">
+                  As configurações salvas aparecerão aqui com data, horário e responsável.
+                </p>
               </div>
+            ) : (
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {scheduleHistory.map((entry) => {
+                  const isCancelled = entry.action === "SCHEDULE_CANCELLED";
+                  const isDisabled = !isCancelled && entry.details && !entry.details.enabled;
+                  const isActive = !isCancelled && !isDisabled;
 
-              {/* Próxima execução */}
-              <div className="rounded-md bg-blue-50 border border-blue-100 px-3 py-2 text-sm text-blue-800">
-                <span className="font-medium">Próxima execução:</span>{" "}
-                {nextExecution(cfg)}
+                  return (
+                    <div
+                      key={entry.id}
+                      className={`rounded-lg border px-4 py-3 ${
+                        isActive
+                          ? "border-blue-100 bg-blue-50"
+                          : "border-gray-100 bg-gray-50"
+                      }`}
+                    >
+                      {/* Linha principal: ícone + descrição + data */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {isActive
+                            ? <CheckCircle2 className="w-4 h-4 text-blue-500 shrink-0" />
+                            : <XCircle className="w-4 h-4 text-gray-400 shrink-0" />
+                          }
+                          <p className={`text-sm font-medium truncate ${isActive ? "text-blue-800" : "text-gray-600"}`}>
+                            {formatHistoryDetails(entry)}
+                          </p>
+                        </div>
+                        <p className="text-xs text-gray-400 whitespace-nowrap shrink-0 mt-0.5">
+                          {formatUTC(entry.createdAt, "dd/MM/yyyy HH:mm")}
+                        </p>
+                      </div>
+
+                      {/* Linha secundária: usuário + tempo relativo */}
+                      <div className="mt-1.5 flex items-center gap-1.5 text-xs text-gray-400">
+                        <User2 className="w-3 h-3 shrink-0" />
+                        <span>{entry.userName}</span>
+                        <span className="text-gray-300">·</span>
+                        <span>{distanceUTC(entry.createdAt)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-          </div>
-        )}
+            )}
+          </TabsContent>
+        </Tabs>
 
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onClose}>Cancelar</Button>

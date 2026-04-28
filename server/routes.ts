@@ -1458,6 +1458,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/ncm-scan/schedule/history", isAuthenticated, async (_req, res) => {
+    try {
+      const rows = await rawAll(
+        `SELECT id, created_at, user_name, action, details
+         FROM audit_logs
+         WHERE action IN ('SCHEDULE_CONFIGURED', 'SCHEDULE_CANCELLED')
+         ORDER BY created_at DESC
+         LIMIT 15`
+      ) as any[];
+      res.json(rows.map((r: any) => ({
+        id: r.id,
+        createdAt: r.created_at,
+        userName: r.user_name,
+        action: r.action,
+        details: r.details ? JSON.parse(r.details) : null,
+      })));
+    } catch (error) {
+      console.error("Error fetching schedule history:", error);
+      res.status(500).json({ message: "Erro ao buscar histórico de agendamentos" });
+    }
+  });
+
   app.delete("/api/ncm-scan/schedule", isAuthenticated, async (req: any, res) => {
     try {
       await db.insert(scanSchedule).values({
