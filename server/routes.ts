@@ -1249,6 +1249,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET /api/ncm-origin?ncm=XXXXXXXX — first insertion metadata for a given NCM code
+  app.get("/api/ncm-origin", isAuthenticated, async (req, res) => {
+    const ncm = (req.query.ncm as string ?? "").trim();
+    if (!ncm) return res.status(400).json({ message: "Parâmetro ncm obrigatório" });
+    try {
+      const row = await rawGet(
+        `SELECT
+           ni.created_at   AS insertedAt,
+           u.filename      AS filename,
+           u.uploaded_at   AS uploadedAt,
+           u.file_type     AS fileType,
+           usr.first_name  AS firstName,
+           usr.last_name   AS lastName,
+           usr.email       AS email
+         FROM ncm_items ni
+         JOIN uploads u   ON ni.upload_id = u.id
+         LEFT JOIN users usr ON u.user_id = usr.id
+         WHERE ni.ncm_code = ?
+         ORDER BY ni.created_at ASC
+         LIMIT 1`,
+        [ncm]
+      ) as any;
+      if (!row) return res.json(null);
+      const uploaderName = row.firstName
+        ? `${row.firstName} ${row.lastName ?? ""}`.trim()
+        : (row.email ?? null);
+      res.json({
+        insertedAt: row.insertedAt,
+        filename: row.filename,
+        fileType: row.fileType,
+        uploadedAt: row.uploadedAt,
+        uploaderName,
+      });
+    } catch (error) {
+      console.error("Error fetching NCM origin:", error);
+      res.status(500).json({ message: "Erro ao buscar origem do NCM" });
+    }
+  });
+
   // GET /api/ncm-scan/logs — tail of scraper.log
   app.get("/api/ncm-scan/logs", isAuthenticated, (_req, res) => {
     const logPath = path.resolve(".data/scraper.log");

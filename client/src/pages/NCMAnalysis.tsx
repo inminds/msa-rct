@@ -15,6 +15,7 @@ import {
   Search, RefreshCw, ScanSearch, ScanLine, Loader2, X,
   CheckCircle2, CalendarClock, Clock, XCircle, CheckCheck, AlertCircle, Send, Eye,
   History, ShieldCheck, ChevronLeft, ChevronRight, ChevronDown, Info,
+  FileUp, User2, FileText,
 } from "lucide-react";
 import { parseUTCDate, formatUTC, distanceUTC } from "@/lib/dateUtils";
 import { useToast } from "@/hooks/use-toast";
@@ -66,6 +67,14 @@ interface ScanRequest {
   rejectedBy?: string;
   rejectionNote?: string;
   createdAt: string;
+}
+
+interface NCMOrigin {
+  insertedAt: string;
+  filename: string;
+  fileType: string;
+  uploadedAt: string;
+  uploaderName: string | null;
 }
 
 interface ScanHistoryEntry {
@@ -227,6 +236,20 @@ export default function NCMAnalysis() {
       if (!selectedNCM) return [];
       const res = await fetch(
         `/api/ncm-changes?status=all&ncm=${encodeURIComponent(selectedNCM.NCM)}`,
+        { credentials: "include" }
+      );
+      return res.json();
+    },
+    enabled: !!selectedNCM,
+  });
+
+  // Origem do NCM selecionado (primeira inserção)
+  const { data: ncmOrigin } = useQuery<NCMOrigin | null>({
+    queryKey: ["/api/ncm-origin", selectedNCM?.NCM],
+    queryFn: async () => {
+      if (!selectedNCM) return null;
+      const res = await fetch(
+        `/api/ncm-origin?ncm=${encodeURIComponent(selectedNCM.NCM)}`,
         { credentials: "include" }
       );
       return res.json();
@@ -1393,6 +1416,15 @@ export default function NCMAnalysis() {
                       </TabsTrigger>
                     )}
                     <TabsTrigger
+                      value="origem"
+                      className="rounded-none px-4 py-2 text-sm font-medium border-b-2 border-transparent
+                        data-[state=active]:border-blue-600 data-[state=active]:text-blue-700
+                        data-[state=inactive]:text-gray-500 bg-transparent shadow-none flex items-center gap-1.5"
+                    >
+                      <FileUp className="w-3.5 h-3.5" />
+                      Origem
+                    </TabsTrigger>
+                    <TabsTrigger
                       value="historico"
                       className="rounded-none px-4 py-2 text-sm font-medium border-b-2 border-transparent
                         data-[state=active]:border-blue-600 data-[state=active]:text-blue-700
@@ -1609,6 +1641,73 @@ export default function NCMAnalysis() {
                       })()}
                     </TabsContent>
                   )}
+                  {/* ── Origem ── */}
+                  <TabsContent value="origem" className="mt-0">
+                    {!ncmOrigin ? (
+                      <div className="flex flex-col items-center justify-center py-12 gap-3 text-gray-400">
+                        <FileUp className="w-10 h-10 text-gray-200" />
+                        <p className="text-sm font-medium text-gray-500">Origem não identificada</p>
+                        <p className="text-xs text-center">Este NCM não possui registro de inserção via upload.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {/* Cards de destaque */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5" />
+                              Inserido em
+                            </p>
+                            <p className="font-semibold text-gray-900 text-sm">
+                              {formatUTC(ncmOrigin.insertedAt, "dd/MM/yyyy")}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {formatUTC(ncmOrigin.insertedAt, "HH:mm")} · {distanceUTC(ncmOrigin.insertedAt)}
+                            </p>
+                          </div>
+
+                          <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+                              <User2 className="w-3.5 h-3.5" />
+                              Inserido por
+                            </p>
+                            <p className="font-semibold text-gray-900 text-sm">
+                              {ncmOrigin.uploaderName ?? "—"}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5">via upload de arquivo</p>
+                          </div>
+
+                          <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5" />
+                              Tipo do arquivo
+                            </p>
+                            <p className="font-semibold text-gray-900 text-sm">
+                              {ncmOrigin.fileType || "—"}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {ncmOrigin.fileType === "SPED" && "Escrituração Fiscal Digital"}
+                              {ncmOrigin.fileType === "XML" && "Nota Fiscal Eletrônica"}
+                              {ncmOrigin.fileType === "CSV" && "Planilha CSV"}
+                              {!["SPED","XML","CSV"].includes(ncmOrigin.fileType) && "formato de arquivo"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Nome do arquivo */}
+                        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 flex items-center gap-3">
+                          <FileUp className="w-5 h-5 text-blue-400 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs text-blue-500 font-medium mb-0.5">Arquivo de origem</p>
+                            <p className="font-mono text-sm text-blue-900 truncate" title={ncmOrigin.filename}>
+                              {ncmOrigin.filename}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </TabsContent>
+
                   {/* ── Histórico ── */}
                   <TabsContent value="historico" className="mt-0">
                     {ncmHistory.length === 0 ? (
