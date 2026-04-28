@@ -319,6 +319,27 @@ export default function NCMAnalysis() {
 
   // ── Mutations ────────────────────────────────────────────────────────────
 
+  // ADMIN: cancelar varredura em andamento
+  const cancelScan = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/ncm-scan/cancel", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Falha ao cancelar varredura");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      stopPolling(false);
+      if (data.cancelled) {
+        toast({ title: "Varredura cancelada", description: "O processo foi interrompido." });
+      } else {
+        toast({ title: "Aviso", description: data.message ?? "Nenhuma varredura em andamento." });
+      }
+    },
+    onError: () => toast({ title: "Erro", description: "Não foi possível cancelar a varredura.", variant: "destructive" }),
+  });
+
   // ADMIN: disparo direto
   const triggerScan = useMutation({
     mutationFn: async (mode: "incompletos" | "todos") => {
@@ -508,7 +529,21 @@ export default function NCMAnalysis() {
           <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-blue-800">
             <Loader2 className="w-4 h-4 animate-spin shrink-0" />
             <span className="text-sm font-medium flex-1">{scanLabel} A tabela atualiza automaticamente.</span>
-            <button onClick={() => stopPolling(false)} className="text-blue-500 hover:text-blue-700">
+            {isAdmin && (
+              <button
+                onClick={() => cancelScan.mutate()}
+                disabled={cancelScan.isPending}
+                className="flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors shrink-0"
+              >
+                {cancelScan.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <X className="w-3 h-3" />
+                )}
+                Cancelar Varredura
+              </button>
+            )}
+            <button onClick={() => stopPolling(false)} className="text-blue-400 hover:text-blue-600 transition-colors shrink-0" title="Fechar banner">
               <X className="w-4 h-4" />
             </button>
           </div>

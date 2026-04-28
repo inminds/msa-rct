@@ -1159,6 +1159,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // POST /api/ncm-scan/cancel — kills the running scraper process
+  app.post("/api/ncm-scan/cancel", isAuthenticated, async (req: any, res) => {
+    const pid = getActivePid();
+    if (!pid) return res.json({ cancelled: false, message: "Nenhuma varredura em andamento" });
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // process may have already exited — that's fine
+    }
+    setActivePid(null);
+    const { id: cUserId, name: cUserName } = getUserInfo(req);
+    logAudit(cUserId, cUserName, "SCAN_CANCELLED", "scan", { pid });
+    res.json({ cancelled: true });
+  });
+
   // GET /api/ncm-scan/last — info da última varredura + mudanças detectadas
   app.get("/api/ncm-scan/last", isAuthenticated, async (_req, res) => {
     try {
