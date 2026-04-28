@@ -278,8 +278,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/uploads', async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 50;
-      const uploads = await storage.getRecentUploads(limit);
-      res.json(uploads);
+      const uploads = await storage.getRecentUploads(limit) as any[];
+      if (!uploads.length) return res.json([]);
+
+      // NCMs extraídos por upload — uma query só
+      const ids = uploads.map(u => u.id);
+      const placeholders = ids.map(() => "?").join(",");
+      const ncmRows = await rawAll(
+        `SELECT upload_id, ncm_code FROM ncm_items WHERE upload_id IN (${placeholders}) ORDER BY created_at ASC`,
+        ids
+      ) as any[];
+      const ncmsByUpload: Record<string, string[]> = {};
+      for (const r of ncmRows) {
+        (ncmsByUpload[r.upload_id] ??= []).push(r.ncm_code);
+      }
+
+      // Nomes dos usuários que fizeram upload — uma query só
+      const userIds = [...new Set(uploads.map(u => u.userId).filter(Boolean))];
+      const usersMap: Record<string, string> = {};
+      if (userIds.length) {
+        const uPlaceholders = userIds.map(() => "?").join(",");
+        const uRows = await rawAll(
+          `SELECT id, first_name, last_name FROM users WHERE id IN (${uPlaceholders})`,
+          userIds
+        ) as any[];
+        for (const u of uRows) {
+          usersMap[u.id] = `${u.first_name} ${u.last_name ?? ""}`.trim();
+        }
+      }
+
+      res.json(uploads.map(u => ({
+        ...u,
+        uploaderName: usersMap[u.userId] ?? u.userId ?? "—",
+        extractedNcms: ncmsByUpload[u.id] ?? [],
+      })));
     } catch (error) {
       console.error("Error fetching uploads:", error);
       res.status(500).json({ message: "Failed to fetch uploads" });
