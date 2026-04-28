@@ -11,9 +11,7 @@ import {
   CalendarClock, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
   ScrollText, ShieldAlert,
 } from "lucide-react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { parseUTCDate } from "@/lib/dateUtils";
+import { formatUTC } from "@/lib/dateUtils";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -178,7 +176,7 @@ function LogRow({ log }: { log: AuditLog }) {
     <tr className="hover:bg-gray-50 border-b border-gray-100">
       <td className="px-4 py-3 whitespace-nowrap">
         <span className="text-xs text-gray-500">
-          {format(parseUTCDate(log.createdAt), "dd/MM/yyyy HH:mm:ss", { locale: ptBR })}
+          {formatUTC(log.createdAt, "dd/MM/yyyy HH:mm:ss")}
         </span>
       </td>
       <td className="px-4 py-3 whitespace-nowrap">

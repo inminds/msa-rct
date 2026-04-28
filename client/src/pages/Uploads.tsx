@@ -8,8 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
-import { format } from "date-fns";
-import { parseUTCDate } from "@/lib/dateUtils";
+import { formatUTC } from "@/lib/dateUtils";
 
 const PAGE_SIZE_OPTIONS = [
   { label: "10 por página", value: 10 },
@@ -164,7 +163,7 @@ export default function Uploads() {
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span className="text-sm text-gray-900" data-testid={`upload-date-${upload.id}`}>
-                                {format(parseUTCDate(upload.uploadedAt), "dd/MM/yyyy HH:mm")}
+                                {formatUTC(upload.uploadedAt, "dd/MM/yyyy HH:mm")}
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(upload.status)}</td>

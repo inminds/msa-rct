@@ -16,9 +16,7 @@ import {
   CheckCircle2, CalendarClock, Clock, XCircle, CheckCheck, AlertCircle, Send, Eye,
   History, ShieldCheck, ChevronLeft, ChevronRight, ChevronDown, Info,
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { parseUTCDate } from "@/lib/dateUtils";
+import { parseUTCDate, formatUTC, distanceUTC } from "@/lib/dateUtils";
 import { useToast } from "@/hooks/use-toast";
 import { ScheduleModal } from "@/components/ScheduleModal";
 
@@ -557,7 +555,7 @@ export default function NCMAnalysis() {
                       <span className="font-medium text-gray-900 text-sm">{req.requestedByName}</span>
                       <span className="text-xs text-gray-500">
                         {req.mode === "todos" ? "Buscar Todos os NCMs" : "Buscar NCMs Pendentes"} •{" "}
-                        {parseUTCDate(req.createdAt).toLocaleString("pt-BR")}
+                        {formatUTC(req.createdAt, "dd/MM/yyyy HH:mm")}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -658,10 +656,10 @@ export default function NCMAnalysis() {
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-xs text-gray-600 whitespace-nowrap font-medium">
-                            {format(parseUTCDate(scan.createdAt), "dd/MM HH:mm", { locale: ptBR })}
+                            {formatUTC(scan.createdAt, "dd/MM HH:mm")}
                           </p>
                           <p className="text-xs text-gray-400 whitespace-nowrap">
-                            {formatDistanceToNow(parseUTCDate(scan.createdAt), { addSuffix: true, locale: ptBR })}
+                            {distanceUTC(scan.createdAt)}
                           </p>
                         </div>
                         <Info className="w-3.5 h-3.5 text-blue-300 group-hover:text-blue-500 shrink-0 ml-1 transition-colors" />
@@ -799,7 +797,7 @@ export default function NCMAnalysis() {
                       <Clock className="w-3.5 h-3.5 shrink-0" />
                       Última varredura:{" "}
                       <span className="font-medium text-gray-700">
-                        {formatDistanceToNow(parseUTCDate(lastScan.triggeredAt), { addSuffix: true, locale: ptBR })}
+                        {distanceUTC(lastScan.triggeredAt)}
                       </span>
                       <Info className="w-3.5 h-3.5 ml-0.5 text-blue-400" />
                     </button>
@@ -995,10 +993,10 @@ export default function NCMAnalysis() {
                 <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
                   <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Data/Hora</p>
                   <p className="font-medium text-gray-900">
-                    {format(parseUTCDate(scanDetailData.triggeredAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                    {formatUTC(scanDetailData.triggeredAt, "dd/MM/yyyy 'às' HH:mm")}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {formatDistanceToNow(parseUTCDate(scanDetailData.triggeredAt), { addSuffix: true, locale: ptBR })}
+                    {distanceUTC(scanDetailData.triggeredAt)}
                   </p>
                 </div>
                 <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
@@ -1153,7 +1151,7 @@ export default function NCMAnalysis() {
                 <span className="flex items-center gap-1 text-xs font-normal text-gray-500 ml-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
                   Última alteração detectada:{" "}
-                  {parseUTCDate(ncmHistory[0].scanDate).toLocaleString("pt-BR")}
+                  {formatUTC(ncmHistory[0].scanDate, "dd/MM/yyyy HH:mm")}
                 </span>
               )}
             </DialogTitle>
@@ -1534,7 +1532,7 @@ export default function NCMAnalysis() {
                                 <span className="font-medium text-green-700">{change.newValue || "—"}</span>
                               </td>
                               <td className="px-3 py-2 border border-gray-200 text-gray-500 whitespace-nowrap text-xs">
-                                {parseUTCDate(change.scanDate).toLocaleString("pt-BR")}
+                                {formatUTC(change.scanDate, "dd/MM/yyyy HH:mm")}
                               </td>
                               <td className="px-3 py-2 border border-gray-200 whitespace-nowrap">
                                 {change.status === "pending" && (
