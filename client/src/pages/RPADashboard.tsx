@@ -18,6 +18,7 @@ const PAGE_SIZE_OPTIONS = [
   { label: "Todos", value: 0 },
 ];
 import { useToast } from "@/hooks/use-toast";
+import { parseUTCDate } from "@/lib/dateUtils";
 
 interface NCMChange {
   id: number;
@@ -266,7 +267,7 @@ export default function RPADashboard() {
                             <span className="font-medium text-green-700">{change.newValue || "—"}</span>
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
-                            {new Date(change.scanDate).toLocaleString("pt-BR")}
+                            {parseUTCDate(change.scanDate).toLocaleString("pt-BR")}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap">
                             <StatusBadge status={change.status} />
@@ -295,7 +296,7 @@ export default function RPADashboard() {
                                 </div>
                               ) : (
                                 <span className="text-xs text-gray-400">
-                                  {change.resolvedAt ? new Date(change.resolvedAt).toLocaleString("pt-BR") : "—"}
+                                  {change.resolvedAt ? parseUTCDate(change.resolvedAt).toLocaleString("pt-BR") : "—"}
                                 </span>
                               )}
                             </td>

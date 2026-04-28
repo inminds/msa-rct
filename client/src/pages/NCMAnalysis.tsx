@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { parseUTCDate } from "@/lib/dateUtils";
 import { useToast } from "@/hooks/use-toast";
 import { ScheduleModal } from "@/components/ScheduleModal";
 
@@ -68,6 +69,22 @@ interface ScanRequest {
   rejectionNote?: string;
   createdAt: string;
 }
+
+interface ScanHistoryEntry {
+  id: number;
+  createdAt: string;
+  triggeredBy: string;
+  action: string;
+  details: Record<string, any> | null;
+}
+
+const SCAN_ACTION_LABELS: Record<string, string> = {
+  SCAN_TRIGGERED_TODOS:        "Varredura completa",
+  SCAN_TRIGGERED_INCOMPLETOS:  "Varredura de pendentes",
+  SCAN_TRIGGERED_SELECIONADOS: "Varredura seletiva",
+  SCAN_AUTO_TRIGGERED:         "Varredura automática (upload)",
+  SCAN_APPROVED_YURI:          "Varredura por aprovação",
+};
 
 function isPreenchido(row: NCMRow): boolean {
   return !!(row["PIS Cumulativo"] || row["PIS Não Cumulativo"]);
@@ -171,6 +188,11 @@ export default function NCMAnalysis() {
     queryKey: ["/api/ncm-scan/last"],
     refetchInterval: 60_000,
   });
+
+  const { data: scanHistory = [], refetch: refetchScanHistory } = useQuery<ScanHistoryEntry[]>({
+    queryKey: ["/api/ncm-scan/history"],
+    refetchInterval: 60_000,
+  });
   const isAdmin = currentUser?.role === "ADMIN";
 
   const { data: ncmRows, isLoading, refetch } = useQuery<NCMRow[]>({
@@ -235,7 +257,7 @@ export default function NCMAnalysis() {
     pollRef.current = null;
     stopRef.current = null;
     setScanning(false);
-    if (completed) { setScanDone(true); refetchLastScan(); }
+    if (completed) { setScanDone(true); refetchLastScan(); refetchScanHistory(); }
     refetch();
   }
 
@@ -521,7 +543,7 @@ export default function NCMAnalysis() {
                       <span className="font-medium text-gray-900 text-sm">{req.requestedByName}</span>
                       <span className="text-xs text-gray-500">
                         {req.mode === "todos" ? "Buscar Todos os NCMs" : "Buscar NCMs Pendentes"} •{" "}
-                        {new Date(req.createdAt).toLocaleString("pt-BR")}
+                        {parseUTCDate(req.createdAt).toLocaleString("pt-BR")}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -572,6 +594,46 @@ export default function NCMAnalysis() {
                     </div>
                   </div>
                 ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Card — Últimas Varreduras (visível para todos) */}
+          {scanHistory.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2 pt-4 px-4">
+                <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <History className="w-4 h-4 text-blue-500" />
+                  Últimas Varreduras
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-0 pb-2">
+                <div className="divide-y divide-gray-100">
+                  {scanHistory.map((scan) => (
+                    <div key={scan.id} className="flex items-center gap-3 px-4 py-2.5">
+                      <div className="w-2 h-2 rounded-full bg-blue-300 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-800 truncate">
+                          {SCAN_ACTION_LABELS[scan.action] ?? scan.action}
+                          {scan.details?.ncms?.length
+                            ? <span className="ml-1 text-gray-500 font-normal">({scan.details.ncms.length} NCMs)</span>
+                            : null}
+                        </p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {scan.action === "SCAN_AUTO_TRIGGERED" ? "Sistema (automático)" : scan.triggeredBy}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-xs text-gray-600 whitespace-nowrap font-medium">
+                          {format(parseUTCDate(scan.createdAt), "dd/MM HH:mm", { locale: ptBR })}
+                        </p>
+                        <p className="text-xs text-gray-400 whitespace-nowrap">
+                          {formatDistanceToNow(parseUTCDate(scan.createdAt), { addSuffix: true, locale: ptBR })}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           )}
@@ -702,7 +764,7 @@ export default function NCMAnalysis() {
                       <Clock className="w-3.5 h-3.5 shrink-0" />
                       Última varredura:{" "}
                       <span className="font-medium text-gray-700">
-                        {formatDistanceToNow(new Date(lastScan.triggeredAt), { addSuffix: true, locale: ptBR })}
+                        {formatDistanceToNow(parseUTCDate(lastScan.triggeredAt), { addSuffix: true, locale: ptBR })}
                       </span>
                       <Info className="w-3.5 h-3.5 ml-0.5 text-blue-400" />
                     </button>
@@ -898,10 +960,10 @@ export default function NCMAnalysis() {
                 <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
                   <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Data/Hora</p>
                   <p className="font-medium text-gray-900">
-                    {format(new Date(lastScan.triggeredAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                    {format(parseUTCDate(lastScan.triggeredAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {formatDistanceToNow(new Date(lastScan.triggeredAt), { addSuffix: true, locale: ptBR })}
+                    {formatDistanceToNow(parseUTCDate(lastScan.triggeredAt), { addSuffix: true, locale: ptBR })}
                   </p>
                 </div>
                 <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
@@ -1056,7 +1118,7 @@ export default function NCMAnalysis() {
                 <span className="flex items-center gap-1 text-xs font-normal text-gray-500 ml-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
                   Última alteração detectada:{" "}
-                  {new Date(ncmHistory[0].scanDate).toLocaleString("pt-BR")}
+                  {parseUTCDate(ncmHistory[0].scanDate).toLocaleString("pt-BR")}
                 </span>
               )}
             </DialogTitle>
@@ -1437,7 +1499,7 @@ export default function NCMAnalysis() {
                                 <span className="font-medium text-green-700">{change.newValue || "—"}</span>
                               </td>
                               <td className="px-3 py-2 border border-gray-200 text-gray-500 whitespace-nowrap text-xs">
-                                {new Date(change.scanDate).toLocaleString("pt-BR")}
+                                {parseUTCDate(change.scanDate).toLocaleString("pt-BR")}
                               </td>
                               <td className="px-3 py-2 border border-gray-200 whitespace-nowrap">
                                 {change.status === "pending" && (

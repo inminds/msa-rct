@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { parseUTCDate } from "@/lib/dateUtils";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Sidebar } from "@/components/Sidebar";
@@ -417,7 +418,7 @@ export default function Dashboard() {
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     {rpaStatus?.last_execution
-                      ? `Última: ${new Date(rpaStatus.last_execution).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+                      ? `Última: ${parseUTCDate(rpaStatus.last_execution).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
                       : "Sem execuções"}
                   </p>
                 </div>
@@ -447,7 +448,7 @@ export default function Dashboard() {
                   <span className="text-sm text-gray-600">Próxima execução programada:</span>
                   <span className="text-sm font-medium text-gray-900" data-testid="rpa-next-execution">
                     {rpaStatus?.next_scheduled_execution
-                      ? new Date(rpaStatus.next_scheduled_execution).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
+                      ? parseUTCDate(rpaStatus.next_scheduled_execution).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
                       : "Não agendado"}
                   </span>
                 </div>
