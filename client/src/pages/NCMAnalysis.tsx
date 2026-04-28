@@ -82,7 +82,10 @@ const SCAN_ACTION_LABELS: Record<string, string> = {
   SCAN_TRIGGERED_SELECIONADOS: "Varredura seletiva",
   SCAN_AUTO_TRIGGERED:         "Varredura automática (upload)",
   SCAN_APPROVED_YURI:          "Varredura por aprovação",
+  SCAN_CANCELLED:              "Varredura cancelada",
 };
+
+const HISTORY_PAGE_SIZE = 5;
 
 /** Converte uma entrada do histórico no mesmo shape que LastScan para reusar o modal. */
 function entryToLastScan(entry: ScanHistoryEntry): LastScan {
@@ -189,6 +192,7 @@ export default function NCMAnalysis() {
   const [scanDetailOpen, setScanDetailOpen] = useState(false);
   const [scanDetailData, setScanDetailData] = useState<LastScan | null>(null);
   const [scanHistoryCollapsed, setScanHistoryCollapsed] = useState(true);
+  const [historyPage, setHistoryPage] = useState(1);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
@@ -646,65 +650,133 @@ export default function NCMAnalysis() {
           )}
 
           {/* Card — Últimas Varreduras (colapsável, visível para todos) */}
-          {scanHistory.length > 0 && (
-            <Card>
-              {/* Header clicável para colapsar/expandir */}
-              <button
-                className="w-full text-left"
-                onClick={() => setScanHistoryCollapsed(v => !v)}
-              >
-                <CardHeader className="pb-3 pt-4 px-4">
-                  <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                    <History className="w-4 h-4 text-blue-500" />
-                    Últimas Varreduras
-                    <span className="ml-1 rounded-full bg-blue-100 text-blue-600 text-xs px-2 py-0.5 font-semibold">
-                      {scanHistory.length}
-                    </span>
-                    <ChevronDown
-                      className={`w-4 h-4 text-gray-400 ml-auto transition-transform duration-200 ${scanHistoryCollapsed ? "" : "rotate-180"}`}
-                    />
-                  </CardTitle>
-                </CardHeader>
-              </button>
+          {scanHistory.length > 0 && (() => {
+            const historyTotalPages = Math.max(1, Math.ceil(scanHistory.length / HISTORY_PAGE_SIZE));
+            const safeHistoryPage = Math.min(historyPage, historyTotalPages);
+            const historyPaginated = scanHistory.slice(
+              (safeHistoryPage - 1) * HISTORY_PAGE_SIZE,
+              safeHistoryPage * HISTORY_PAGE_SIZE,
+            );
+            return (
+              <Card>
+                {/* Header clicável para colapsar/expandir */}
+                <button
+                  className="w-full text-left"
+                  onClick={() => setScanHistoryCollapsed(v => !v)}
+                >
+                  <CardHeader className="pb-3 pt-4 px-4">
+                    <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <History className="w-4 h-4 text-blue-500" />
+                      Últimas Varreduras
+                      <span className="ml-1 rounded-full bg-blue-100 text-blue-600 text-xs px-2 py-0.5 font-semibold">
+                        {scanHistory.length}
+                      </span>
+                      <ChevronDown
+                        className={`w-4 h-4 text-gray-400 ml-auto transition-transform duration-200 ${scanHistoryCollapsed ? "" : "rotate-180"}`}
+                      />
+                    </CardTitle>
+                  </CardHeader>
+                </button>
 
-              {/* Conteúdo colapsável */}
-              {!scanHistoryCollapsed && (
-                <CardContent className="px-0 pb-2 pt-0">
-                  <div className="divide-y divide-gray-100">
-                    {scanHistory.map((scan) => (
-                      <button
-                        key={scan.id}
-                        className="w-full text-left flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors group"
-                        onClick={() => { setScanDetailData(entryToLastScan(scan)); setScanDetailOpen(true); }}
-                      >
-                        <div className="w-2 h-2 rounded-full bg-blue-300 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-gray-800 truncate group-hover:text-blue-700 transition-colors">
-                            {SCAN_ACTION_LABELS[scan.action] ?? scan.action}
-                            {scan.details?.ncms?.length
-                              ? <span className="ml-1 text-gray-500 font-normal">({scan.details.ncms.length} NCMs)</span>
-                              : null}
-                          </p>
-                          <p className="text-xs text-gray-400 truncate">
-                            {scan.action === "SCAN_AUTO_TRIGGERED" ? "Sistema (automático)" : scan.triggeredBy}
-                          </p>
+                {/* Conteúdo colapsável */}
+                {!scanHistoryCollapsed && (
+                  <CardContent className="px-0 pb-2 pt-0">
+                    <div className="divide-y divide-gray-100">
+                      {historyPaginated.map((scan) => {
+                        const isCancelled = scan.action === "SCAN_CANCELLED";
+                        return (
+                          <button
+                            key={scan.id}
+                            className={`w-full text-left flex items-center gap-3 px-4 py-2.5 transition-colors group ${
+                              isCancelled ? "hover:bg-red-50" : "hover:bg-gray-50"
+                            }`}
+                            onClick={() => { setScanDetailData(entryToLastScan(scan)); setScanDetailOpen(true); }}
+                          >
+                            {/* Dot indicador */}
+                            <div className={`w-2 h-2 rounded-full shrink-0 ${isCancelled ? "bg-red-400" : "bg-blue-300"}`} />
+
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-xs font-medium truncate transition-colors ${
+                                isCancelled
+                                  ? "text-red-600 group-hover:text-red-700"
+                                  : "text-gray-800 group-hover:text-blue-700"
+                              }`}>
+                                {SCAN_ACTION_LABELS[scan.action] ?? scan.action}
+                                {scan.details?.ncms?.length
+                                  ? <span className="ml-1 text-gray-500 font-normal">({scan.details.ncms.length} NCMs)</span>
+                                  : null}
+                              </p>
+                              <p className="text-xs text-gray-400 truncate">
+                                {scan.action === "SCAN_AUTO_TRIGGERED" ? "Sistema (automático)" : scan.triggeredBy}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              {isCancelled && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-600">
+                                  <X className="w-3 h-3" />
+                                  Cancelada
+                                </span>
+                              )}
+                              <div className="text-right">
+                                <p className="text-xs text-gray-600 whitespace-nowrap font-medium">
+                                  {formatUTC(scan.createdAt, "dd/MM HH:mm")}
+                                </p>
+                                <p className="text-xs text-gray-400 whitespace-nowrap">
+                                  {distanceUTC(scan.createdAt)}
+                                </p>
+                              </div>
+                              <Info className={`w-3.5 h-3.5 shrink-0 ml-1 transition-colors ${
+                                isCancelled ? "text-red-300 group-hover:text-red-500" : "text-blue-300 group-hover:text-blue-500"
+                              }`} />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Paginação do histórico */}
+                    {historyTotalPages > 1 && (
+                      <div className="flex items-center justify-between px-4 pt-2.5 pb-1 border-t border-gray-100">
+                        <p className="text-xs text-gray-400">
+                          {(safeHistoryPage - 1) * HISTORY_PAGE_SIZE + 1}–{Math.min(safeHistoryPage * HISTORY_PAGE_SIZE, scanHistory.length)} de {scanHistory.length}
+                        </p>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setHistoryPage(p => Math.max(1, p - 1)); }}
+                            disabled={safeHistoryPage === 1}
+                            className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5 text-gray-500" />
+                          </button>
+                          {Array.from({ length: historyTotalPages }, (_, i) => i + 1).map(p => (
+                            <button
+                              key={p}
+                              onClick={(e) => { e.stopPropagation(); setHistoryPage(p); }}
+                              className={`min-w-[24px] h-6 px-1.5 rounded text-xs font-medium transition-colors ${
+                                safeHistoryPage === p
+                                  ? "bg-primary text-primary-foreground"
+                                  : "hover:bg-gray-100 text-gray-500"
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          ))}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setHistoryPage(p => Math.min(historyTotalPages, p + 1)); }}
+                            disabled={safeHistoryPage === historyTotalPages}
+                            className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+                          </button>
                         </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-xs text-gray-600 whitespace-nowrap font-medium">
-                            {formatUTC(scan.createdAt, "dd/MM HH:mm")}
-                          </p>
-                          <p className="text-xs text-gray-400 whitespace-nowrap">
-                            {distanceUTC(scan.createdAt)}
-                          </p>
-                        </div>
-                        <Info className="w-3.5 h-3.5 text-blue-300 group-hover:text-blue-500 shrink-0 ml-1 transition-colors" />
-                      </button>
-                    ))}
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          )}
+                      </div>
+                    )}
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })()}
 
           {/* Filtros + botões de ação */}
           <Card>

@@ -1231,9 +1231,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `SELECT * FROM audit_logs
          WHERE action IN (
            'SCAN_TRIGGERED_TODOS','SCAN_TRIGGERED_INCOMPLETOS',
-           'SCAN_TRIGGERED_SELECIONADOS','SCAN_AUTO_TRIGGERED','SCAN_APPROVED_YURI'
+           'SCAN_TRIGGERED_SELECIONADOS','SCAN_AUTO_TRIGGERED','SCAN_APPROVED_YURI',
+           'SCAN_CANCELLED'
          )
-         ORDER BY created_at DESC LIMIT 10`
+         ORDER BY created_at DESC LIMIT 50`
       ) as any[];
       res.json(rows.map((r: any) => ({
         id: r.id,
