@@ -129,6 +129,34 @@ async function generateXlsx(
 
 // ── PDF generation ───────────────────────────────────────────────────────────
 
+/**
+ * Column weight table — determines proportional widths in the PDF.
+ * Higher = wider. Columns not listed get weight 1.5.
+ */
+const COL_WEIGHTS: Record<string, number> = {
+  "NCM":                    1.0,
+  "Descrição":              4.5,
+  "PIS Cumulativo":         1.3,
+  "COFINS Cumulativo":      1.3,
+  "PIS Não Cumulativo":     1.3,
+  "COFINS Não Cumulativo":  1.3,
+  "Regime":                 1.8,
+  "Campo Alterado":         2.0,
+  "Valor Anterior":         1.8,
+  "Valor Novo":             1.8,
+  "Detectado Em":           1.8,
+  "Status":                 1.2,
+  "Data/Hora":              1.8,
+  "Tipo":                   1.2,
+  "Campo":                  1.5,
+};
+
+/** Columns that may contain long text and should wrap to a second line. */
+const WRAP_COLS = new Set(["Descrição", "Campo Alterado", "Valor Anterior", "Valor Novo"]);
+
+/** Max characters before truncating even in wrap columns (keeps rows bounded). */
+const MAX_WRAP_CHARS = 120;
+
 function generatePdf(
   reportId: string,
   reportName: string,
@@ -139,77 +167,128 @@ function generatePdf(
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const filePath = path.join(REPORTS_DIR, `${reportId}.pdf`);
-    const doc = new PDFDocument({ margin: 40, size: "A4", layout: "landscape" });
+    const MARGIN = 40;
+    const doc = new PDFDocument({ margin: MARGIN, size: "A4", layout: "landscape", bufferPages: true });
     const stream = fs.createWriteStream(filePath);
     doc.pipe(stream);
 
-    const pageW = doc.page.width - 80;
-    const rowH = 18;
-    const headerBlockH = 36;
-    const tableTop = 90;
-    const chunkSize = headers.length > 12 ? 8 : headers.length;
-    const columnChunks: number[][] = [];
-    for (let i = 0; i < headers.length; i += chunkSize) {
-      columnChunks.push(Array.from({ length: Math.min(chunkSize, headers.length - i) }, (_, j) => i + j));
-    }
+    const pageW  = doc.page.width  - MARGIN * 2;   // usable width
+    const pageH  = doc.page.height;
+    const HEADER_BLOCK_H = 44;
+    const TABLE_TOP      = HEADER_BLOCK_H + MARGIN + 8; // y where table starts
+    const HDR_ROW_H      = 20;
+    const DATA_ROW_H     = 30;   // enough for 1–2 lines
+    const FOOTER_H       = 20;
+    const PADDING        = 5;
 
-    const drawHeaderBlock = (chunkLabel?: string) => {
-      doc.rect(40, 40, pageW, headerBlockH).fill("#1E40AF");
-      doc.fillColor("white").fontSize(14).font("Helvetica-Bold")
-        .text(reportName, 48, 50, { width: pageW - 16 });
-      doc.fillColor("#93C5FD").fontSize(8).font("Helvetica")
-        .text(
-          `Gerado em: ${new Date().toLocaleString("pt-BR")}${extraInfo ? " | " + extraInfo : ""}${chunkLabel ? ` | ${chunkLabel}` : ""}`,
-          48,
-          66
-        );
+    // ── Compute proportional column widths ──────────────────────────────────
+    const weights   = headers.map(h => COL_WEIGHTS[h] ?? 1.5);
+    const totalW    = weights.reduce((s, w) => s + w, 0);
+    const colWidths = weights.map(w => Math.floor(pageW * w / totalW));
+    // fix rounding drift on last column
+    const drift = pageW - colWidths.reduce((s, w) => s + w, 0);
+    colWidths[colWidths.length - 1] += drift;
+
+    // ── x offset for each column ─────────────────────────────────────────────
+    const colX = colWidths.reduce<number[]>((acc, w, i) => {
+      acc.push(i === 0 ? MARGIN : acc[i - 1] + colWidths[i - 1]);
+      return acc;
+    }, []);
+
+    // ── Draw the blue header block ───────────────────────────────────────────
+    const drawHeaderBlock = () => {
+      doc.rect(MARGIN, MARGIN, pageW, HEADER_BLOCK_H).fill("#1E40AF");
+      doc.fillColor("white").fontSize(13).font("Helvetica-Bold")
+        .text(reportName, MARGIN + 8, MARGIN + 10, { width: pageW - 16, lineBreak: false });
+      const sub = `Gerado em: ${new Date().toLocaleString("pt-BR")}${extraInfo ? "  |  " + extraInfo : ""}`;
+      doc.fillColor("#BFDBFE").fontSize(7.5).font("Helvetica")
+        .text(sub, MARGIN + 8, MARGIN + 28, { width: pageW - 16, lineBreak: false });
     };
 
-    const drawChunk = (chunkIndexes: number[], chunkIndex: number) => {
-      if (chunkIndex > 0) doc.addPage({ size: "A4", layout: "landscape" });
-      drawHeaderBlock(headers.length > chunkSize ? `Parte ${chunkIndex + 1} de ${columnChunks.length}` : undefined);
-
-      const visibleHeaders = chunkIndexes.map(idx => headers[idx]);
-      const colW = Math.floor(pageW / visibleHeaders.length);
-      let y = tableTop;
-
-      const drawRow = (cells: (string | number)[], isHeader = false, isAlt = false) => {
-        if (y > doc.page.height - 60) {
-          doc.addPage({ size: "A4", layout: "landscape" });
-          drawHeaderBlock(headers.length > chunkSize ? `Parte ${chunkIndex + 1} de ${columnChunks.length}` : undefined);
-          y = tableTop;
-        }
-        if (isHeader) {
-          doc.rect(40, y, pageW, rowH).fill("#3B82F6");
-        } else if (isAlt) {
-          doc.rect(40, y, pageW, rowH).fill("#F0F9FF");
-        }
-        cells.forEach((cell, i) => {
-          const x = 40 + i * colW;
-          doc.fillColor(isHeader ? "white" : "#111827")
-            .fontSize(isHeader ? 8 : 7.5)
-            .font(isHeader ? "Helvetica-Bold" : "Helvetica")
-            .text(String(cell ?? ""), x + 4, y + 5, { width: colW - 8, lineBreak: false, ellipsis: true });
-        });
-        y += rowH;
-      };
-
-      drawRow(visibleHeaders, true);
-      data.forEach((row, i) => {
-        const chunkRow = chunkIndexes.map(idx => row[idx] ?? "");
-        drawRow(chunkRow, false, i % 2 === 0);
+    // ── Draw column header row ───────────────────────────────────────────────
+    const drawColumnHeaders = (y: number) => {
+      doc.rect(MARGIN, y, pageW, HDR_ROW_H).fill("#2563EB");
+      // vertical dividers
+      colX.slice(1).forEach(x => {
+        doc.moveTo(x, y).lineTo(x, y + HDR_ROW_H).stroke("#1D4ED8");
       });
+      headers.forEach((h, i) => {
+        doc.fillColor("white").fontSize(7.5).font("Helvetica-Bold")
+          .text(h, colX[i] + PADDING, y + 6, { width: colWidths[i] - PADDING * 2, lineBreak: false, ellipsis: true });
+      });
+      return y + HDR_ROW_H;
     };
 
-    columnChunks.forEach((chunkIndexes, chunkIndex) => drawChunk(chunkIndexes, chunkIndex));
+    // ── Draw a single data row ───────────────────────────────────────────────
+    const drawDataRow = (cells: (string | number)[], rowIndex: number, y: number): number => {
+      const isAlt = rowIndex % 2 === 0;
+      doc.rect(MARGIN, y, pageW, DATA_ROW_H).fill(isAlt ? "#F0F9FF" : "#FFFFFF");
 
-    // Footer
+      // bottom border line
+      doc.moveTo(MARGIN, y + DATA_ROW_H)
+        .lineTo(MARGIN + pageW, y + DATA_ROW_H)
+        .strokeColor("#E2E8F0").lineWidth(0.5).stroke();
+
+      // vertical dividers
+      colX.slice(1).forEach(x => {
+        doc.moveTo(x, y).lineTo(x, y + DATA_ROW_H)
+          .strokeColor("#E2E8F0").lineWidth(0.5).stroke();
+      });
+
+      cells.forEach((cell, i) => {
+        const raw  = String(cell ?? "");
+        const isWrap = WRAP_COLS.has(headers[i]);
+        const text = isWrap && raw.length > MAX_WRAP_CHARS
+          ? raw.slice(0, MAX_WRAP_CHARS) + "…"
+          : raw;
+        const textY = isWrap ? y + 5 : y + (DATA_ROW_H - 8) / 2;  // centre single-line
+
+        // value colour: green for %, gray for "—" / empty
+        const isPercent = /^\d[\d,.]*\s*%$/.test(text.trim());
+        const isEmpty   = text.trim() === "" || text === "—";
+        const color     = isEmpty ? "#9CA3AF" : isPercent ? "#15803D" : "#111827";
+
+        doc.fillColor(color).fontSize(7.5).font("Helvetica")
+          .text(text, colX[i] + PADDING, textY, {
+            width:     colWidths[i] - PADDING * 2,
+            lineBreak: isWrap,
+            height:    DATA_ROW_H - 8,
+            ellipsis:  true,
+          });
+      });
+
+      return y + DATA_ROW_H;
+    };
+
+    // ── Main render loop ─────────────────────────────────────────────────────
+    let y = TABLE_TOP;
+    let pageNum = 0;
+
+    const newPage = (isFirst = false) => {
+      if (!isFirst) doc.addPage({ size: "A4", layout: "landscape" });
+      pageNum++;
+      drawHeaderBlock();
+      y = drawColumnHeaders(TABLE_TOP);
+    };
+
+    newPage(true);
+
+    data.forEach((row, rowIndex) => {
+      if (y + DATA_ROW_H > pageH - FOOTER_H - 10) newPage();
+      y = drawDataRow(row, rowIndex, y);
+    });
+
+    // outer border around the whole table area (first page only — good enough)
+    // ── Footers ──────────────────────────────────────────────────────────────
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) {
       doc.switchToPage(range.start + i);
-      doc.fillColor("#9CA3AF").fontSize(7).font("Helvetica")
-        .text(`MSA-RCT — ${title} — Página ${i + 1} de ${range.count}`,
-          40, doc.page.height - 25, { width: pageW, align: "center" });
+      doc.fillColor("#9CA3AF").fontSize(6.5).font("Helvetica")
+        .text(
+          `MSA-RCT  •  ${title}  •  Página ${i + 1} de ${range.count}`,
+          MARGIN, pageH - 18,
+          { width: pageW, align: "center" }
+        );
     }
 
     doc.end();
