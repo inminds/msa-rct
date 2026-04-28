@@ -1579,7 +1579,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/ncm-excel", isAuthenticated, async (_req, res) => {
     try {
       const rows = await readNCMsFromExcel();
-      res.json(rows);
+      res.json([...rows].reverse()); // mais recentes primeiro
     } catch (error) {
       console.error("Error reading Excel:", error);
       res.status(500).json({ message: "Failed to read Excel file" });
