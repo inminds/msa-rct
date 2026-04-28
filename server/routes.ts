@@ -1098,6 +1098,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET /api/ncm-scan/history — last N scan events from audit_logs (all users)
+  app.get("/api/ncm-scan/history", isAuthenticated, async (_req, res) => {
+    try {
+      const rows = await rawAll(
+        `SELECT * FROM audit_logs
+         WHERE action IN (
+           'SCAN_TRIGGERED_TODOS','SCAN_TRIGGERED_INCOMPLETOS',
+           'SCAN_TRIGGERED_SELECIONADOS','SCAN_AUTO_TRIGGERED','SCAN_APPROVED_YURI'
+         )
+         ORDER BY created_at DESC LIMIT 10`
+      ) as any[];
+      res.json(rows.map((r: any) => ({
+        id: r.id,
+        createdAt: r.created_at,
+        triggeredBy: r.user_name,
+        action: r.action,
+        details: r.details ? JSON.parse(r.details) : null,
+      })));
+    } catch (error) {
+      console.error("Error fetching scan history:", error);
+      res.status(500).json({ message: "Erro ao buscar histórico de varreduras" });
+    }
+  });
+
   // GET /api/ncm-scan/logs — tail of scraper.log
   app.get("/api/ncm-scan/logs", isAuthenticated, (_req, res) => {
     const logPath = path.resolve(".data/scraper.log");
