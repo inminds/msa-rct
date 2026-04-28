@@ -14,8 +14,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search, RefreshCw, ScanSearch, ScanLine, Loader2, X,
   CheckCircle2, CalendarClock, Clock, XCircle, CheckCheck, AlertCircle, Send, Eye,
-  History, ShieldCheck, ChevronLeft, ChevronRight,
+  History, ShieldCheck, ChevronLeft, ChevronRight, Info,
 } from "lucide-react";
+import { formatDistanceToNow, format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { ScheduleModal } from "@/components/ScheduleModal";
 
@@ -43,6 +45,19 @@ interface NCMChange {
   resolvedAt: string | null;
 }
 
+interface LastScan {
+  triggeredAt: string;
+  triggeredBy: string;
+  action: string;
+  details: Record<string, any> | null;
+  changesDate: string | null;
+  changes: {
+    ncm: string; field: string;
+    oldValue: string; newValue: string;
+    status: "pending" | "accepted" | "rejected";
+  }[];
+}
+
 interface ScanRequest {
   id: number;
   requestedBy: string;
@@ -58,14 +73,23 @@ function isPreenchido(row: NCMRow): boolean {
   return !!(row["PIS Cumulativo"] || row["PIS Não Cumulativo"]);
 }
 
-function RequestStatusCard({ request, onNewRequest }: { request: ScanRequest; onNewRequest: () => void }) {
-  const isActive = request.status === "pending_thayssa" || request.status === "pending_yuri";
-
+function RequestStatusCard({
+  request,
+  onNewRequest,
+  onDismiss,
+}: {
+  request: ScanRequest;
+  onNewRequest: () => void;
+  onDismiss: () => void;
+}) {
   if (request.status === "pending_thayssa") {
     return (
       <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-yellow-800">
         <Clock className="w-4 h-4 shrink-0" />
-        <span className="text-sm font-medium">Aguardando aprovação da <strong>Thayssa</strong> — solicitação de varredura enviada.</span>
+        <span className="text-sm font-medium flex-1">Aguardando aprovação da <strong>Thayssa</strong> — solicitação de varredura enviada.</span>
+        <button onClick={onDismiss} className="text-yellow-500 hover:text-yellow-700 transition-colors">
+          <X className="w-4 h-4" />
+        </button>
       </div>
     );
   }
@@ -73,7 +97,10 @@ function RequestStatusCard({ request, onNewRequest }: { request: ScanRequest; on
     return (
       <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-orange-800">
         <Clock className="w-4 h-4 shrink-0" />
-        <span className="text-sm font-medium">Thayssa aprovou. Aguardando aprovação do <strong>Yuri</strong>.</span>
+        <span className="text-sm font-medium flex-1">Thayssa aprovou. Aguardando aprovação do <strong>Yuri</strong>.</span>
+        <button onClick={onDismiss} className="text-orange-500 hover:text-orange-700 transition-colors">
+          <X className="w-4 h-4" />
+        </button>
       </div>
     );
   }
@@ -81,7 +108,10 @@ function RequestStatusCard({ request, onNewRequest }: { request: ScanRequest; on
     return (
       <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-green-800">
         <CheckCircle2 className="w-4 h-4 shrink-0" />
-        <span className="text-sm font-medium">Solicitação aprovada! A varredura foi iniciada.</span>
+        <span className="text-sm font-medium flex-1">Solicitação aprovada! A varredura foi iniciada.</span>
+        <button onClick={onDismiss} className="text-green-500 hover:text-green-700 transition-colors">
+          <X className="w-4 h-4" />
+        </button>
       </div>
     );
   }
@@ -97,6 +127,9 @@ function RequestStatusCard({ request, onNewRequest }: { request: ScanRequest; on
         <Button size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-100 text-xs" onClick={onNewRequest}>
           Novo Pedido
         </Button>
+        <button onClick={onDismiss} className="text-red-400 hover:text-red-600 transition-colors ml-1">
+          <X className="w-4 h-4" />
+        </button>
       </div>
     );
   }
@@ -124,13 +157,20 @@ export default function NCMAnalysis() {
   const [scanDone, setScanDone] = useState(false);
   const [scanLabel, setScanLabel] = useState("");
   const [rejectTarget, setRejectTarget] = useState<{ id: number; name: string } | null>(null);
+  const [requestDismissed, setRequestDismissed] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
+  const [lastScanOpen, setLastScanOpen] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: currentUser } = useQuery<any>({ queryKey: ["/api/auth/user"] });
+
+  const { data: lastScan, refetch: refetchLastScan } = useQuery<LastScan | null>({
+    queryKey: ["/api/ncm-scan/last"],
+    refetchInterval: 60_000,
+  });
   const isAdmin = currentUser?.role === "ADMIN";
 
   const { data: ncmRows, isLoading, refetch } = useQuery<NCMRow[]>({
@@ -195,7 +235,7 @@ export default function NCMAnalysis() {
     pollRef.current = null;
     stopRef.current = null;
     setScanning(false);
-    if (completed) setScanDone(true);
+    if (completed) { setScanDone(true); refetchLastScan(); }
     refetch();
   }
 
@@ -213,6 +253,9 @@ export default function NCMAnalysis() {
     checkOnMount();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Reset dismiss quando uma nova solicitação chega
+  useEffect(() => { setRequestDismissed(false); }, [myRequest?.id]);
 
   // Auto-abrir modal se URL contém ?ncm=<code> (vindo do Dashboard)
   useEffect(() => {
@@ -449,10 +492,14 @@ export default function NCMAnalysis() {
         )}
 
         {/* Card de status do pedido (apenas USER) */}
-        {!isAdmin && myRequest && (
+        {!isAdmin && myRequest && !requestDismissed && (
           <RequestStatusCard
             request={myRequest}
-            onNewRequest={() => queryClient.invalidateQueries({ queryKey: ["/api/scan-requests/mine"] })}
+            onNewRequest={() => {
+              setRequestDismissed(false);
+              queryClient.invalidateQueries({ queryKey: ["/api/scan-requests/mine"] });
+            }}
+            onDismiss={() => setRequestDismissed(true)}
           />
         )}
 
@@ -638,12 +685,29 @@ export default function NCMAnalysis() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between flex-wrap gap-3">
-                <CardTitle>
-                  Análises de NCM
-                  <span className="ml-2 text-sm font-normal text-gray-500">
-                    ({totalItems} resultado{totalItems !== 1 ? "s" : ""})
-                  </span>
-                </CardTitle>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <CardTitle>
+                    Análises de NCM
+                    <span className="ml-2 text-sm font-normal text-gray-500">
+                      ({totalItems} resultado{totalItems !== 1 ? "s" : ""})
+                    </span>
+                  </CardTitle>
+
+                  {/* Chip — última varredura */}
+                  {lastScan && (
+                    <button
+                      onClick={() => setLastScanOpen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                    >
+                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                      Última varredura:{" "}
+                      <span className="font-medium text-gray-700">
+                        {formatDistanceToNow(new Date(lastScan.triggeredAt), { addSuffix: true, locale: ptBR })}
+                      </span>
+                      <Info className="w-3.5 h-3.5 ml-0.5 text-blue-400" />
+                    </button>
+                  )}
+                </div>
                 <Select
                   value={String(pageSize)}
                   onValueChange={(v) => setPageSize(Number(v))}
@@ -815,6 +879,128 @@ export default function NCMAnalysis() {
       </main>
 
       <ScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
+
+      {/* Modal — última varredura */}
+      <Dialog open={lastScanOpen} onOpenChange={setLastScanOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <ScanSearch className="w-5 h-5 text-blue-500" />
+              Última Varredura
+            </DialogTitle>
+          </DialogHeader>
+
+          {lastScan && (
+            <div className="overflow-auto flex-1 space-y-5 mt-1">
+
+              {/* Info geral */}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Data/Hora</p>
+                  <p className="font-medium text-gray-900">
+                    {format(new Date(lastScan.triggeredAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {formatDistanceToNow(new Date(lastScan.triggeredAt), { addSuffix: true, locale: ptBR })}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Iniciada por</p>
+                  <p className="font-medium text-gray-900">
+                    {lastScan.action === "SCAN_AUTO_TRIGGERED" ? "Sistema (automático)" : lastScan.triggeredBy}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {lastScan.action === "SCAN_TRIGGERED_TODOS" && "Todos os NCMs"}
+                    {lastScan.action === "SCAN_TRIGGERED_INCOMPLETOS" && "NCMs pendentes"}
+                    {lastScan.action === "SCAN_TRIGGERED_SELECIONADOS" && "NCMs selecionados"}
+                    {lastScan.action === "SCAN_AUTO_TRIGGERED" && "Disparada por upload"}
+                    {lastScan.action === "SCAN_APPROVED_YURI" && "Solicitação aprovada"}
+                  </p>
+                </div>
+              </div>
+
+              {/* NCMs selecionados (se seletiva) */}
+              {lastScan.details?.ncms && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">NCMs varridos</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(lastScan.details.ncms as string[]).map((ncm) => (
+                      <span key={ncm} className="inline-flex items-center rounded-md border border-gray-200 bg-white px-2 py-0.5 text-xs font-mono text-gray-700">
+                        {ncm}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* NCMs novos (auto-scan) */}
+              {lastScan.details?.newNcms?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">NCMs novos detectados no upload</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(lastScan.details.newNcms as string[]).map((ncm) => (
+                      <span key={ncm} className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">
+                        {ncm}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Mudanças detectadas */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Mudanças detectadas
+                  {lastScan.changes.length > 0 && (
+                    <span className="ml-2 rounded-full bg-blue-100 text-blue-700 text-xs px-2 py-0.5 font-semibold normal-case">
+                      {lastScan.changes.length}
+                    </span>
+                  )}
+                </p>
+                {lastScan.changes.length === 0 ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-green-700 text-sm">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    Nenhuma mudança detectada — todos os dados estão atualizados.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm border-collapse border border-gray-200 rounded overflow-hidden">
+                      <thead>
+                        <tr className="bg-blue-600 text-white">
+                          <th className="px-3 py-2 text-left font-medium border border-blue-500">NCM</th>
+                          <th className="px-3 py-2 text-left font-medium border border-blue-500">Campo</th>
+                          <th className="px-3 py-2 text-left font-medium border border-blue-500">Antes</th>
+                          <th className="px-3 py-2 text-left font-medium border border-blue-500">Depois</th>
+                          <th className="px-3 py-2 text-left font-medium border border-blue-500">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lastScan.changes.map((c, i) => (
+                          <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                            <td className="px-3 py-2 border border-gray-200 font-mono text-xs">{c.ncm}</td>
+                            <td className="px-3 py-2 border border-gray-200 text-gray-700">{c.field}</td>
+                            <td className="px-3 py-2 border border-gray-200">
+                              <span className="line-through text-red-500 text-xs">{c.oldValue || "—"}</span>
+                            </td>
+                            <td className="px-3 py-2 border border-gray-200">
+                              <span className="font-medium text-green-700 text-xs">{c.newValue || "—"}</span>
+                            </td>
+                            <td className="px-3 py-2 border border-gray-200">
+                              {c.status === "pending" && <Badge className="bg-yellow-100 text-yellow-800 text-xs">Pendente</Badge>}
+                              {c.status === "accepted" && <Badge className="bg-green-100 text-green-800 text-xs">Aceita</Badge>}
+                              {c.status === "rejected" && <Badge className="bg-red-100 text-red-800 text-xs">Rejeitada</Badge>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Barra flutuante de varredura seletiva */}
       {selectionMode && selectedNCMs.size > 0 && (

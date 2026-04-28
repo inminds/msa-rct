@@ -1053,6 +1053,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET /api/ncm-scan/last — info da última varredura + mudanças detectadas
+  app.get("/api/ncm-scan/last", isAuthenticated, async (_req, res) => {
+    try {
+      const lastLog = await rawGet(
+        `SELECT * FROM audit_logs
+         WHERE action IN (
+           'SCAN_TRIGGERED_TODOS','SCAN_TRIGGERED_INCOMPLETOS',
+           'SCAN_TRIGGERED_SELECIONADOS','SCAN_AUTO_TRIGGERED','SCAN_APPROVED_YURI'
+         )
+         ORDER BY created_at DESC LIMIT 1`
+      ) as any;
+
+      if (!lastLog) return res.json(null);
+
+      // Pega o lote mais recente de mudanças (mesmo scan_date)
+      const latestBatch = await rawGet(
+        "SELECT scan_date FROM ncm_changes ORDER BY scan_date DESC LIMIT 1"
+      ) as any;
+
+      let changes: any[] = [];
+      if (latestBatch?.scan_date) {
+        changes = await rawAll(
+          "SELECT * FROM ncm_changes WHERE scan_date = ? ORDER BY ncm ASC",
+          [latestBatch.scan_date]
+        ) as any[];
+      }
+
+      res.json({
+        triggeredAt: lastLog.created_at,
+        triggeredBy: lastLog.user_name,
+        action: lastLog.action,
+        details: lastLog.details ? JSON.parse(lastLog.details) : null,
+        changesDate: latestBatch?.scan_date ?? null,
+        changes: changes.map((c: any) => ({
+          ncm: c.ncm, field: c.field,
+          oldValue: c.old_value, newValue: c.new_value,
+          status: c.status,
+        })),
+      });
+    } catch (error) {
+      console.error("Error fetching last scan:", error);
+      res.status(500).json({ message: "Erro ao buscar última varredura" });
+    }
+  });
+
   // GET /api/ncm-scan/logs — tail of scraper.log
   app.get("/api/ncm-scan/logs", isAuthenticated, (_req, res) => {
     const logPath = path.resolve(".data/scraper.log");
