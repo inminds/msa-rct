@@ -25,8 +25,8 @@ export default function Landing() {
               <Calculator className="text-white text-2xl" />
             </div>
             <div>
-              <h1 className="text-4xl font-bold text-gray-900">TributAI</h1>
-              <p className="text-lg text-gray-600">Diagnóstico Tributário Automatizado</p>
+              <h1 className="text-4xl font-bold text-gray-900">Revisão da Classificação Tributária</h1>
+              <p className="text-lg text-gray-600">Machado Schütz Advogados</p>
             </div>
           </div>
           <p className="text-xl text-gray-700 max-w-2xl mx-auto">
