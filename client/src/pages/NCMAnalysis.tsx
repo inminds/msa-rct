@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search, RefreshCw, ScanSearch, ScanLine, Loader2, X,
   CheckCircle2, CalendarClock, Clock, XCircle, CheckCheck, AlertCircle, Send, Eye,
-  History, ShieldCheck, ChevronLeft, ChevronRight, Info,
+  History, ShieldCheck, ChevronLeft, ChevronRight, ChevronDown, Info,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -85,6 +85,18 @@ const SCAN_ACTION_LABELS: Record<string, string> = {
   SCAN_AUTO_TRIGGERED:         "Varredura automática (upload)",
   SCAN_APPROVED_YURI:          "Varredura por aprovação",
 };
+
+/** Converte uma entrada do histórico no mesmo shape que LastScan para reusar o modal. */
+function entryToLastScan(entry: ScanHistoryEntry): LastScan {
+  return {
+    triggeredAt: entry.createdAt,
+    triggeredBy: entry.triggeredBy,
+    action: entry.action,
+    details: entry.details,
+    changesDate: null,
+    changes: [],
+  };
+}
 
 function isPreenchido(row: NCMRow): boolean {
   return !!(row["PIS Cumulativo"] || row["PIS Não Cumulativo"]);
@@ -176,7 +188,9 @@ export default function NCMAnalysis() {
   const [rejectTarget, setRejectTarget] = useState<{ id: number; name: string } | null>(null);
   const [requestDismissed, setRequestDismissed] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
-  const [lastScanOpen, setLastScanOpen] = useState(false);
+  const [scanDetailOpen, setScanDetailOpen] = useState(false);
+  const [scanDetailData, setScanDetailData] = useState<LastScan | null>(null);
+  const [scanHistoryCollapsed, setScanHistoryCollapsed] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
@@ -598,43 +612,64 @@ export default function NCMAnalysis() {
             </Card>
           )}
 
-          {/* Card — Últimas Varreduras (visível para todos) */}
+          {/* Card — Últimas Varreduras (colapsável, visível para todos) */}
           {scanHistory.length > 0 && (
             <Card>
-              <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <History className="w-4 h-4 text-blue-500" />
-                  Últimas Varreduras
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-0 pb-2">
-                <div className="divide-y divide-gray-100">
-                  {scanHistory.map((scan) => (
-                    <div key={scan.id} className="flex items-center gap-3 px-4 py-2.5">
-                      <div className="w-2 h-2 rounded-full bg-blue-300 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-800 truncate">
-                          {SCAN_ACTION_LABELS[scan.action] ?? scan.action}
-                          {scan.details?.ncms?.length
-                            ? <span className="ml-1 text-gray-500 font-normal">({scan.details.ncms.length} NCMs)</span>
-                            : null}
-                        </p>
-                        <p className="text-xs text-gray-400 truncate">
-                          {scan.action === "SCAN_AUTO_TRIGGERED" ? "Sistema (automático)" : scan.triggeredBy}
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-xs text-gray-600 whitespace-nowrap font-medium">
-                          {format(parseUTCDate(scan.createdAt), "dd/MM HH:mm", { locale: ptBR })}
-                        </p>
-                        <p className="text-xs text-gray-400 whitespace-nowrap">
-                          {formatDistanceToNow(parseUTCDate(scan.createdAt), { addSuffix: true, locale: ptBR })}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
+              {/* Header clicável para colapsar/expandir */}
+              <button
+                className="w-full text-left"
+                onClick={() => setScanHistoryCollapsed(v => !v)}
+              >
+                <CardHeader className="pb-3 pt-4 px-4">
+                  <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <History className="w-4 h-4 text-blue-500" />
+                    Últimas Varreduras
+                    <span className="ml-1 rounded-full bg-blue-100 text-blue-600 text-xs px-2 py-0.5 font-semibold">
+                      {scanHistory.length}
+                    </span>
+                    <ChevronDown
+                      className={`w-4 h-4 text-gray-400 ml-auto transition-transform duration-200 ${scanHistoryCollapsed ? "" : "rotate-180"}`}
+                    />
+                  </CardTitle>
+                </CardHeader>
+              </button>
+
+              {/* Conteúdo colapsável */}
+              {!scanHistoryCollapsed && (
+                <CardContent className="px-0 pb-2 pt-0">
+                  <div className="divide-y divide-gray-100">
+                    {scanHistory.map((scan) => (
+                      <button
+                        key={scan.id}
+                        className="w-full text-left flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors group"
+                        onClick={() => { setScanDetailData(entryToLastScan(scan)); setScanDetailOpen(true); }}
+                      >
+                        <div className="w-2 h-2 rounded-full bg-blue-300 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-gray-800 truncate group-hover:text-blue-700 transition-colors">
+                            {SCAN_ACTION_LABELS[scan.action] ?? scan.action}
+                            {scan.details?.ncms?.length
+                              ? <span className="ml-1 text-gray-500 font-normal">({scan.details.ncms.length} NCMs)</span>
+                              : null}
+                          </p>
+                          <p className="text-xs text-gray-400 truncate">
+                            {scan.action === "SCAN_AUTO_TRIGGERED" ? "Sistema (automático)" : scan.triggeredBy}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-xs text-gray-600 whitespace-nowrap font-medium">
+                            {format(parseUTCDate(scan.createdAt), "dd/MM HH:mm", { locale: ptBR })}
+                          </p>
+                          <p className="text-xs text-gray-400 whitespace-nowrap">
+                            {formatDistanceToNow(parseUTCDate(scan.createdAt), { addSuffix: true, locale: ptBR })}
+                          </p>
+                        </div>
+                        <Info className="w-3.5 h-3.5 text-blue-300 group-hover:text-blue-500 shrink-0 ml-1 transition-colors" />
+                      </button>
+                    ))}
+                  </div>
+                </CardContent>
+              )}
             </Card>
           )}
 
@@ -758,7 +793,7 @@ export default function NCMAnalysis() {
                   {/* Chip — última varredura */}
                   {lastScan && (
                     <button
-                      onClick={() => setLastScanOpen(true)}
+                      onClick={() => { setScanDetailData(lastScan); setScanDetailOpen(true); }}
                       className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
                     >
                       <Clock className="w-3.5 h-3.5 shrink-0" />
@@ -942,17 +977,17 @@ export default function NCMAnalysis() {
 
       <ScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
 
-      {/* Modal — última varredura */}
-      <Dialog open={lastScanOpen} onOpenChange={setLastScanOpen}>
+      {/* Modal — detalhes da varredura (última ou selecionada do histórico) */}
+      <Dialog open={scanDetailOpen} onOpenChange={(open) => { setScanDetailOpen(open); if (!open) setScanDetailData(null); }}>
         <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <ScanSearch className="w-5 h-5 text-blue-500" />
-              Última Varredura
+              Detalhes da Varredura
             </DialogTitle>
           </DialogHeader>
 
-          {lastScan && (
+          {scanDetailData && (
             <div className="overflow-auto flex-1 space-y-5 mt-1">
 
               {/* Info geral */}
@@ -960,33 +995,33 @@ export default function NCMAnalysis() {
                 <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
                   <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Data/Hora</p>
                   <p className="font-medium text-gray-900">
-                    {format(parseUTCDate(lastScan.triggeredAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                    {format(parseUTCDate(scanDetailData.triggeredAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {formatDistanceToNow(parseUTCDate(lastScan.triggeredAt), { addSuffix: true, locale: ptBR })}
+                    {formatDistanceToNow(parseUTCDate(scanDetailData.triggeredAt), { addSuffix: true, locale: ptBR })}
                   </p>
                 </div>
                 <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
                   <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Iniciada por</p>
                   <p className="font-medium text-gray-900">
-                    {lastScan.action === "SCAN_AUTO_TRIGGERED" ? "Sistema (automático)" : lastScan.triggeredBy}
+                    {scanDetailData.action === "SCAN_AUTO_TRIGGERED" ? "Sistema (automático)" : scanDetailData.triggeredBy}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {lastScan.action === "SCAN_TRIGGERED_TODOS" && "Todos os NCMs"}
-                    {lastScan.action === "SCAN_TRIGGERED_INCOMPLETOS" && "NCMs pendentes"}
-                    {lastScan.action === "SCAN_TRIGGERED_SELECIONADOS" && "NCMs selecionados"}
-                    {lastScan.action === "SCAN_AUTO_TRIGGERED" && "Disparada por upload"}
-                    {lastScan.action === "SCAN_APPROVED_YURI" && "Solicitação aprovada"}
+                    {scanDetailData.action === "SCAN_TRIGGERED_TODOS" && "Todos os NCMs"}
+                    {scanDetailData.action === "SCAN_TRIGGERED_INCOMPLETOS" && "NCMs pendentes"}
+                    {scanDetailData.action === "SCAN_TRIGGERED_SELECIONADOS" && "NCMs selecionados"}
+                    {scanDetailData.action === "SCAN_AUTO_TRIGGERED" && "Disparada por upload"}
+                    {scanDetailData.action === "SCAN_APPROVED_YURI" && "Solicitação aprovada"}
                   </p>
                 </div>
               </div>
 
               {/* NCMs selecionados (se seletiva) */}
-              {lastScan.details?.ncms && (
+              {scanDetailData.details?.ncms && (
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">NCMs varridos</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {(lastScan.details.ncms as string[]).map((ncm) => (
+                    {(scanDetailData.details.ncms as string[]).map((ncm) => (
                       <span key={ncm} className="inline-flex items-center rounded-md border border-gray-200 bg-white px-2 py-0.5 text-xs font-mono text-gray-700">
                         {ncm}
                       </span>
@@ -996,11 +1031,11 @@ export default function NCMAnalysis() {
               )}
 
               {/* NCMs novos (auto-scan) */}
-              {lastScan.details?.newNcms?.length > 0 && (
+              {scanDetailData.details?.newNcms?.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">NCMs novos detectados no upload</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {(lastScan.details.newNcms as string[]).map((ncm) => (
+                    {(scanDetailData.details.newNcms as string[]).map((ncm) => (
                       <span key={ncm} className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">
                         {ncm}
                       </span>
@@ -1013,13 +1048,13 @@ export default function NCMAnalysis() {
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                   Mudanças detectadas
-                  {lastScan.changes.length > 0 && (
+                  {scanDetailData.changes.length > 0 && (
                     <span className="ml-2 rounded-full bg-blue-100 text-blue-700 text-xs px-2 py-0.5 font-semibold normal-case">
-                      {lastScan.changes.length}
+                      {scanDetailData.changes.length}
                     </span>
                   )}
                 </p>
-                {lastScan.changes.length === 0 ? (
+                {scanDetailData.changes.length === 0 ? (
                   <div className="flex items-center gap-2 rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-green-700 text-sm">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
                     Nenhuma mudança detectada — todos os dados estão atualizados.
@@ -1037,7 +1072,7 @@ export default function NCMAnalysis() {
                         </tr>
                       </thead>
                       <tbody>
-                        {lastScan.changes.map((c, i) => (
+                        {scanDetailData.changes.map((c, i) => (
                           <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                             <td className="px-3 py-2 border border-gray-200 font-mono text-xs">{c.ncm}</td>
                             <td className="px-3 py-2 border border-gray-200 text-gray-700">{c.field}</td>
