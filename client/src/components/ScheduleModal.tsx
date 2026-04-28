@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { CalendarClock, History, User2, XCircle, CheckCircle2 } from "lucide-react";
+import { CalendarClock, History, User2, XCircle, CheckCircle2, RotateCcw } from "lucide-react";
 import { formatUTC, distanceUTC } from "@/lib/dateUtils";
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
@@ -115,6 +115,8 @@ export function ScheduleModal({ open, onClose }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [cfg, setCfg] = useState<ScheduleConfig>(DEFAULT);
+  const [activeTab, setActiveTab] = useState("config");
+  const [restoredFrom, setRestoredFrom] = useState<number | null>(null);
 
   const { data: saved, isLoading } = useQuery<ScheduleConfig | null>({
     queryKey: ["/api/ncm-scan/schedule"],
@@ -155,8 +157,30 @@ export function ScheduleModal({ open, onClose }: Props) {
   const set = <K extends keyof ScheduleConfig>(key: K, value: ScheduleConfig[K]) =>
     setCfg(prev => ({ ...prev, [key]: value }));
 
+  function applyFromHistory(entry: ScheduleHistoryEntry) {
+    const d = entry.details;
+    if (!d) return;
+    setCfg({
+      enabled:    !!d.enabled,
+      frequency:  d.frequency  ?? "weekly",
+      dayOfWeek:  d.dayOfWeek  ?? 1,
+      dayOfMonth: d.dayOfMonth ?? 1,
+      hour:       d.hour       ?? 8,
+      minute:     d.minute     ?? 0,
+      mode:       d.mode       ?? "incompletos",
+    });
+    setRestoredFrom(entry.id);
+    setActiveTab("config");
+  }
+
+  function handleClose() {
+    setRestoredFrom(null);
+    setActiveTab("config");
+    onClose();
+  }
+
   return (
-    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+    <Dialog open={open} onOpenChange={v => !v && handleClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -165,7 +189,7 @@ export function ScheduleModal({ open, onClose }: Props) {
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="config" className="w-full">
+        <Tabs value={activeTab} onValueChange={v => { setActiveTab(v); if (v === "config") {} }} className="w-full">
           {/* Tab triggers */}
           <TabsList className="w-full grid grid-cols-2 mb-4">
             <TabsTrigger value="config" className="flex items-center gap-1.5">
@@ -189,6 +213,20 @@ export function ScheduleModal({ open, onClose }: Props) {
               <div className="py-8 text-center text-gray-500 text-sm">Carregando configuração...</div>
             ) : (
               <div className="space-y-5">
+                {/* Banner: configuração restaurada do histórico */}
+                {restoredFrom !== null && (
+                  <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                    Configuração anterior carregada — revise e clique em <strong className="ml-0.5">Salvar</strong> para aplicar.
+                    <button
+                      className="ml-auto text-amber-500 hover:text-amber-700 transition-colors"
+                      onClick={() => setRestoredFrom(null)}
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
                 {/* Toggle */}
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-medium">Agendamento ativo</Label>
@@ -334,12 +372,21 @@ export function ScheduleModal({ open, onClose }: Props) {
                         </p>
                       </div>
 
-                      {/* Linha secundária: usuário + tempo relativo */}
+                      {/* Linha secundária: usuário + tempo relativo + botão Usar */}
                       <div className="mt-1.5 flex items-center gap-1.5 text-xs text-gray-400">
                         <User2 className="w-3 h-3 shrink-0" />
                         <span>{entry.userName}</span>
                         <span className="text-gray-300">·</span>
                         <span>{distanceUTC(entry.createdAt)}</span>
+                        {entry.details && (
+                          <button
+                            onClick={() => applyFromHistory(entry)}
+                            className="ml-auto flex items-center gap-1 rounded-md border border-blue-200 bg-white px-2 py-0.5 text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            Usar
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -350,7 +397,7 @@ export function ScheduleModal({ open, onClose }: Props) {
         </Tabs>
 
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button variant="outline" onClick={handleClose}>Cancelar</Button>
           <Button
             onClick={() => saveMutation.mutate(cfg)}
             disabled={saveMutation.isPending || isLoading}
