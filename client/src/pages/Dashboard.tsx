@@ -418,7 +418,7 @@ export default function Dashboard() {
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     {rpaStatus?.last_execution
-                      ? `Última: ${formatUTC(rpaStatus.last_execution, "HH:mm")}`
+                      ? `Última: ${formatUTC(rpaStatus.last_execution, "dd/MM HH:mm")}`
                       : "Sem execuções"}
                   </p>
                 </div>

@@ -851,8 +851,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/rpa/status", async (req, res) => {
     try {
       const schedule = await rawGet("SELECT * FROM scan_schedule WHERE id = 1") as any;
-      const lastChange = await rawGet(
-        "SELECT scan_date FROM ncm_changes ORDER BY scan_date DESC LIMIT 1"
+
+      // Last scan execution = last audit_log entry for any scan trigger action
+      const lastScanLog = await rawGet(
+        `SELECT created_at FROM audit_logs
+         WHERE action IN (
+           'SCAN_TRIGGERED_TODOS','SCAN_TRIGGERED_INCOMPLETOS',
+           'SCAN_TRIGGERED_SELECIONADOS','SCAN_AUTO_TRIGGERED','SCAN_APPROVED_YURI'
+         )
+         ORDER BY created_at DESC LIMIT 1`
       ) as any;
 
       let next_scheduled_execution: string | null = null;
@@ -874,7 +881,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         service_status: schedule?.enabled ? "active" : "inactive",
-        last_execution: lastChange?.scan_date ?? null,
+        last_execution: lastScanLog?.created_at ?? null,
         next_scheduled_execution,
         system_health: "healthy",
       });
