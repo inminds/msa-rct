@@ -1149,15 +1149,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/users", isAdmin, async (req: any, res) => {
     try {
-      const { id, firstName, lastName, email, role, password } = req.body;
-      if (!id || !firstName || !password) return res.status(400).json({ message: "id, nome e senha são obrigatórios" });
+      const { firstName, lastName, email, role, password } = req.body;
+      if (!firstName || !password) return res.status(400).json({ message: "nome e senha são obrigatórios" });
+      // id is auto-generated — derive a short slug from email prefix, falling back to UUID
+      const rawId = email
+        ? email.split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "")
+        : null;
+      const baseId = rawId || randomUUID().slice(0, 8);
+      // Ensure uniqueness: append numeric suffix if needed
+      let id = baseId;
+      let suffix = 2;
+      while (await rawGet("SELECT id FROM users WHERE id = ?", [id])) {
+        id = `${baseId}${suffix++}`;
+      }
       const bcrypt = (await import("bcryptjs")).default;
-      const existing = await rawGet("SELECT id FROM users WHERE id = ?", [id.toLowerCase()]);
-      if (existing) { return res.status(409).json({ message: "Usuário já existe" }); }
       const hash = await bcrypt.hash(password, 10);
       await rawRun(
         "INSERT INTO users (id, first_name, last_name, email, role, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
-        [id.toLowerCase(), firstName, lastName ?? "", email ?? "", role ?? "USER", hash]
+        [id, firstName, lastName ?? "", email ?? "", role ?? "USER", hash]
       );
       const { id: cuUserId, name: cuUserName } = getUserInfo(req);
       logAudit(cuUserId, cuUserName, "USER_CREATED", "user", {

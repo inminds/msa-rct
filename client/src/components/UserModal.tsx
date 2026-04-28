@@ -9,7 +9,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff } from "lucide-react";
 
 interface UserForm {
-  id: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -23,7 +22,7 @@ interface Props {
   editUser?: { id: string; firstName: string; lastName: string; email: string; role: string } | null;
 }
 
-const EMPTY: UserForm = { id: "", firstName: "", lastName: "", email: "", role: "USER", password: "" };
+const EMPTY: UserForm = { firstName: "", lastName: "", email: "", role: "USER", password: "" };
 
 export function UserModal({ open, onClose, editUser }: Props) {
   const { toast } = useToast();
@@ -34,7 +33,7 @@ export function UserModal({ open, onClose, editUser }: Props) {
 
   useEffect(() => {
     if (editUser) {
-      setForm({ id: editUser.id, firstName: editUser.firstName, lastName: editUser.lastName, email: editUser.email, role: editUser.role as "USER" | "ADMIN", password: "" });
+      setForm({ firstName: editUser.firstName, lastName: editUser.lastName, email: editUser.email, role: editUser.role as "USER" | "ADMIN", password: "" });
     } else {
       setForm(EMPTY);
     }
@@ -47,7 +46,7 @@ export function UserModal({ open, onClose, editUser }: Props) {
       const url = isEditing ? `/api/users/${editUser!.id}` : "/api/users";
       const method = isEditing ? "PUT" : "POST";
       const body: any = { firstName: form.firstName, lastName: form.lastName, email: form.email, role: form.role };
-      if (!isEditing) { body.id = form.id; body.password = form.password; }
+      if (!isEditing) { body.password = form.password; }
       else if (form.password) { body.password = form.password; }
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "include" });
       if (!res.ok) { const d = await res.json(); throw new Error(d.message || "Erro ao salvar"); }
@@ -70,12 +69,16 @@ export function UserModal({ open, onClose, editUser }: Props) {
           <DialogTitle>{isEditing ? "Editar Usuário" : "Novo Usuário"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          {!isEditing && (
-            <div className="space-y-1">
-              <Label>Usuário (login)</Label>
-              <Input placeholder="ex: joao.silva" value={form.id} onChange={e => set("id", e.target.value.toLowerCase())} />
-            </div>
-          )}
+          <div className="space-y-1">
+            <Label>Tipo</Label>
+            <Select value={form.role} onValueChange={v => set("role", v as "USER" | "ADMIN")}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="USER">Padrão</SelectItem>
+                <SelectItem value="ADMIN">Administrador</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Nome</Label>
@@ -89,16 +92,6 @@ export function UserModal({ open, onClose, editUser }: Props) {
           <div className="space-y-1">
             <Label>Email</Label>
             <Input type="email" placeholder="email@exemplo.com" value={form.email} onChange={e => set("email", e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label>Tipo</Label>
-            <Select value={form.role} onValueChange={v => set("role", v as "USER" | "ADMIN")}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="USER">Padrão</SelectItem>
-                <SelectItem value="ADMIN">Administrador</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
           <div className="space-y-1">
             <Label>{isEditing ? "Nova senha (deixe vazio para manter)" : "Senha"}</Label>
