@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,24 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [recentEmails, setRecentEmails] = useState<string[]>([]);
+
+  // Carrega emails salvos ao montar
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("rct_recent_emails");
+      if (stored) setRecentEmails(JSON.parse(stored));
+    } catch { /* ignore */ }
+  }, []);
+
+  function saveEmail(emailValue: string) {
+    try {
+      const prev: string[] = JSON.parse(localStorage.getItem("rct_recent_emails") ?? "[]");
+      const updated = [emailValue, ...prev.filter(e => e !== emailValue)].slice(0, 5);
+      localStorage.setItem("rct_recent_emails", JSON.stringify(updated));
+      setRecentEmails(updated);
+    } catch { /* ignore */ }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,6 +51,7 @@ export default function Login() {
         throw new Error(data.message || "Credenciais inválidas");
       }
 
+      saveEmail(email);
       await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       setLocation("/app");
     } catch (err: any) {
@@ -87,7 +106,13 @@ export default function Login() {
                     autoFocus
                     className="pl-10"
                     placeholder="seu@email.com"
+                    list="rct-email-suggestions"
                   />
+                  {recentEmails.length > 0 && (
+                    <datalist id="rct-email-suggestions">
+                      {recentEmails.map(e => <option key={e} value={e} />)}
+                    </datalist>
+                  )}
                 </div>
               </div>
 
