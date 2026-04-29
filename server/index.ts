@@ -6,13 +6,22 @@ import { initScheduler } from "./services/schedulerService";
 import { setupLocalAuth, seedUsers } from "./localAuth";
 
 // ── Validação de variáveis de ambiente obrigatórias em produção ──────────────
-if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
-  console.error(
-    "\n❌ ERRO CRÍTICO: SESSION_SECRET não está definido!\n" +
-    "   Em produção esta variável é obrigatória para proteger as sessões de login.\n" +
-    "   Defina SESSION_SECRET=<string longa e aleatória> no ambiente de produção.\n"
-  );
-  process.exit(1);
+if (process.env.NODE_ENV === "production") {
+  const missing = [
+    !process.env.SESSION_SECRET        && "SESSION_SECRET",
+    !process.env.SEED_PASSWORD_THAYSSA && "SEED_PASSWORD_THAYSSA",
+    !process.env.SEED_PASSWORD_YURI    && "SEED_PASSWORD_YURI",
+    !process.env.SEED_PASSWORD_ADMIN   && "SEED_PASSWORD_ADMIN",
+  ].filter(Boolean);
+
+  if (missing.length > 0) {
+    console.error(
+      "\n❌ ERRO CRÍTICO: variáveis de ambiente obrigatórias não definidas em produção:\n" +
+      missing.map(v => `   - ${v}`).join("\n") + "\n" +
+      "\n   Defina-as no painel do Railway/Vercel antes de subir.\n"
+    );
+    process.exit(1);
+  }
 }
 
 const app = express();

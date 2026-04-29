@@ -31,7 +31,7 @@ const SEED_USERS = [
     lastName: "",
     email: "thayssa@machadoschutz.adv.br",
     role: "ADMIN",
-    password: "Thayssa@MS",
+    password: process.env.SEED_PASSWORD_THAYSSA ?? "",
   },
   {
     id: SEED_USER_IDS.yuri,
@@ -39,7 +39,7 @@ const SEED_USERS = [
     lastName: "",
     email: "yuri@machadoschutz.adv.br",
     role: "ADMIN",
-    password: "Yuri@MS",
+    password: process.env.SEED_PASSWORD_YURI ?? "",
   },
   {
     id: SEED_USER_IDS.adminInminds,
@@ -47,7 +47,7 @@ const SEED_USERS = [
     lastName: "InMinds",
     email: "admin@inminds.com.br",
     role: "ADMIN",
-    password: "admin",
+    password: process.env.SEED_PASSWORD_ADMIN ?? "",
   },
 ];
 
