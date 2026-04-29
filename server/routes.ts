@@ -1350,6 +1350,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/users/:id", isAdmin, async (req: any, res) => {
     try {
       const { firstName, lastName, email, role, password } = req.body;
+      const oldUser = await rawGet(
+        "SELECT first_name, last_name, email, role FROM users WHERE id = ?",
+        [req.params.id]
+      ) as any;
       const bcrypt = (await import("bcryptjs")).default;
       if (password) {
         const hash = await bcrypt.hash(password, 10);
@@ -1370,6 +1374,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         email: email ?? "",
         role: role ?? "USER",
         passwordChanged: !!password,
+        prevName: oldUser ? `${oldUser.first_name} ${oldUser.last_name ?? ""}`.trim() : undefined,
+        prevEmail: oldUser?.email,
+        prevRole: oldUser?.role,
       });
       res.json({ success: true });
     } catch (error) {
@@ -1796,15 +1803,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let rows: any[];
       let total: any;
+      const baseSelect = `
+        SELECT a.*, u.email AS user_email
+        FROM audit_logs a
+        LEFT JOIN users u ON a.user_id = u.id
+      `;
       if (category === "all") {
         rows = await rawAll(
-          "SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+          `${baseSelect} ORDER BY a.created_at DESC LIMIT ? OFFSET ?`,
           [limit, offset]
         ) as any[];
         total = await rawGet("SELECT COUNT(*) AS n FROM audit_logs") as any;
       } else {
         rows = await rawAll(
-          "SELECT * FROM audit_logs WHERE category = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+          `${baseSelect} WHERE a.category = ? ORDER BY a.created_at DESC LIMIT ? OFFSET ?`,
           [category, limit, offset]
         ) as any[];
         total = await rawGet("SELECT COUNT(*) AS n FROM audit_logs WHERE category = ?", [category]) as any;
@@ -1816,6 +1828,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           createdAt: r.created_at,
           userId: r.user_id,
           userName: r.user_name,
+          userEmail: r.user_email ?? "",
           action: r.action,
           category: r.category,
           details: r.details ? JSON.parse(r.details) : null,

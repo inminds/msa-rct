@@ -21,6 +21,7 @@ interface AuditLog {
   createdAt: string;
   userId: string;
   userName: string;
+  userEmail: string;
   action: string;
   category: string;
   details: Record<string, any> | null;
@@ -134,9 +135,28 @@ function renderDetails(action: string, details: Record<string, any> | null): Rea
     items.push(<DetailItem key="type"   label="Tipo"    value={details.type} />);
     items.push(<DetailItem key="format" label="Formato" value={details.format} />);
   } else if (action === "USER_CREATED" || action === "USER_UPDATED" || action === "USER_DELETED") {
-    items.push(<DetailItem key="target" label="Usuário"  value={details.targetName || details.targetId} />);
-    items.push(<DetailItem key="email"  label="E-mail"   value={details.email} />);
-    items.push(<DetailItem key="role"   label="Perfil"   value={details.role === "ADMIN" ? "Administrador" : details.role ? "Analista Tributário" : ""} />);
+    const roleLabel = (r: string) => r === "ADMIN" ? "Administrador" : r ? "Analista Tributário" : "";
+    if (action === "USER_UPDATED" && (details.prevName || details.prevEmail || details.prevRole)) {
+      const nameChanged  = details.prevName  && details.prevName  !== details.targetName;
+      const emailChanged = details.prevEmail && details.prevEmail !== details.email;
+      const roleChanged  = details.prevRole  && details.prevRole  !== details.role;
+      if (nameChanged)
+        items.push(<DetailItem key="name-change"  label="Nome"   value={`${details.prevName} → ${details.targetName}`} />);
+      else
+        items.push(<DetailItem key="target" label="Usuário" value={details.targetName || details.targetId} />);
+      if (emailChanged)
+        items.push(<DetailItem key="email-change" label="E-mail" value={`${details.prevEmail} → ${details.email}`} />);
+      else
+        items.push(<DetailItem key="email" label="E-mail" value={details.email} />);
+      if (roleChanged)
+        items.push(<DetailItem key="role-change"  label="Perfil" value={`${roleLabel(details.prevRole)} → ${roleLabel(details.role)}`} />);
+      else
+        items.push(<DetailItem key="role" label="Perfil" value={roleLabel(details.role)} />);
+    } else {
+      items.push(<DetailItem key="target" label="Usuário" value={details.targetName || details.targetId} />);
+      items.push(<DetailItem key="email"  label="E-mail"  value={details.email} />);
+      items.push(<DetailItem key="role"   label="Perfil"  value={roleLabel(details.role)} />);
+    }
     if (action === "USER_UPDATED" && details.passwordChanged)
       items.push(<span key="pw" className="text-xs text-amber-600 font-medium">Senha alterada</span>);
   } else if (action === "NCM_CHANGE_ACCEPTED" || action === "NCM_CHANGE_REJECTED") {
@@ -207,7 +227,9 @@ function LogRow({ log }: { log: AuditLog }) {
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
         <span className="text-sm text-gray-700 font-medium">{log.userName}</span>
-        <span className="block text-xs text-gray-400">{log.userId}</span>
+        {log.userEmail && (
+          <span className="block text-xs text-gray-400">{log.userEmail}</span>
+        )}
       </td>
     </tr>
   );
