@@ -753,7 +753,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Clear all database (development only)
-  app.post('/api/admin/clear-database', async (req, res) => {
+  app.post('/api/admin/clear-database', isAdmin, async (req, res) => {
     if (process.env.NODE_ENV !== 'production') {
       try {
         await storage.clearAllData();
@@ -767,8 +767,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Demo data generation endpoint (public for demo purposes)
-  app.post('/api/generate-demo-data', async (req: any, res) => {
+  // Demo data generation endpoint
+  app.post('/api/generate-demo-data', isAdmin, async (req: any, res) => {
     try {
       // The demo data is already built into the storage layer
       // This endpoint just confirms the demo data is active
@@ -800,7 +800,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Clear demo data endpoint
-  app.post('/api/clear-demo-data', async (req: any, res) => {
+  app.post('/api/clear-demo-data', isAdmin, async (req: any, res) => {
     try {
       await clearDemoData();
       res.json({ message: "Demo data cleared successfully" });

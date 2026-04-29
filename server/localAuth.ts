@@ -9,6 +9,7 @@ import { randomBytes } from "crypto";
 import { Strategy as LocalStrategy } from "passport-local";
 import MemoryStore from "memorystore";
 import bcrypt from "bcryptjs";
+import rateLimit from "express-rate-limit";
 import type { Express, RequestHandler } from "express";
 import { rawGet, rawRun } from "./rawDb.js";
 
@@ -174,8 +175,18 @@ export function setupLocalAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  const loginRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    skipSuccessfulRequests: true,
+    message: { message: "Muitas tentativas de login. Tente novamente em 15 minutos." },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: () => process.env.NODE_ENV !== "production",
+  });
+
   // POST /api/auth/login
-  app.post("/api/auth/login", (req, res, next) => {
+  app.post("/api/auth/login", loginRateLimit, (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) return next(err);
       if (!user)
