@@ -15,9 +15,18 @@ const MemStore = MemoryStore(session);
 
 // ─── Usuários pré-cadastrados ────────────────────────────────────────────────
 
+// UUIDs fixos para usuários seed — nunca alterar após definidos
+// (precisam ser determinísticos para que a migração e o seedUsers funcionem
+//  de forma consistente em qualquer ambiente/boot)
+export const SEED_USER_IDS = {
+  thayssa:       "10000000-0000-4000-8000-000000000001",
+  yuri:          "10000000-0000-4000-8000-000000000002",
+  adminInminds:  "10000000-0000-4000-8000-000000000003",
+} as const;
+
 const SEED_USERS = [
   {
-    id: "thayssa",
+    id: SEED_USER_IDS.thayssa,
     firstName: "Thayssa",
     lastName: "",
     email: "thayssa@machadoschutz.adv.br",
@@ -25,7 +34,7 @@ const SEED_USERS = [
     password: "Thayssa@MS",
   },
   {
-    id: "yuri",
+    id: SEED_USER_IDS.yuri,
     firstName: "Yuri",
     lastName: "",
     email: "yuri@machadoschutz.adv.br",
@@ -33,7 +42,7 @@ const SEED_USERS = [
     password: "Yuri@MS",
   },
   {
-    id: "admin-inminds",
+    id: SEED_USER_IDS.adminInminds,
     firstName: "Admin",
     lastName: "InMinds",
     email: "admin@inminds.com.br",

@@ -169,6 +169,37 @@ if (isDev) {
   if (!scanReqCols.includes('ncms'))
     sqliteDb.exec("ALTER TABLE scan_requests ADD COLUMN ncms TEXT");
 
+  // ── Migração: padronizar IDs legados dos usuários seed para UUID ──────────
+  // Roda apenas se o ID antigo ainda existir — idempotente, seguro em todo boot.
+  const SEED_ID_MIGRATION: Record<string, string> = {
+    "thayssa":       "10000000-0000-4000-8000-000000000001",
+    "yuri":          "10000000-0000-4000-8000-000000000002",
+    "admin-inminds": "10000000-0000-4000-8000-000000000003",
+  };
+
+  for (const [oldId, newId] of Object.entries(SEED_ID_MIGRATION)) {
+    const exists = sqliteDb.prepare("SELECT id FROM users WHERE id = ?").get(oldId);
+    if (!exists) continue; // já migrado ou nunca existiu
+
+    // Desativa FK temporariamente para poder atualizar PK + FKs sem ordem obrigatória
+    sqliteDb.pragma("foreign_keys = OFF");
+    try {
+      sqliteDb.transaction(() => {
+        sqliteDb.prepare("UPDATE users         SET id            = ? WHERE id            = ?").run(newId, oldId);
+        sqliteDb.prepare("UPDATE uploads       SET user_id       = ? WHERE user_id       = ?").run(newId, oldId);
+        sqliteDb.prepare("UPDATE tributes      SET validated_by  = ? WHERE validated_by  = ?").run(newId, oldId);
+        sqliteDb.prepare("UPDATE scan_requests SET requested_by  = ? WHERE requested_by  = ?").run(newId, oldId);
+        sqliteDb.prepare("UPDATE scan_requests SET rejected_by   = ? WHERE rejected_by   = ?").run(newId, oldId);
+        sqliteDb.prepare("UPDATE audit_logs    SET user_id       = ? WHERE user_id       = ?").run(newId, oldId);
+        sqliteDb.prepare("UPDATE reports       SET created_by    = ? WHERE created_by    = ?").run(newId, oldId);
+        sqliteDb.prepare("UPDATE reports       SET downloaded_by = ? WHERE downloaded_by = ?").run(newId, oldId);
+      })();
+      console.log(`[migration] ID "${oldId}" → UUID ${newId}`);
+    } finally {
+      sqliteDb.pragma("foreign_keys = ON");
+    }
+  }
+
   console.log(`✅ SQLite development database initialized at: ${SQLITE_PATH}`);
 } else {
   // Production: PostgreSQL (Neon)
