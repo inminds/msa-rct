@@ -54,6 +54,7 @@ export function UserModal({ open, onClose, editUser }: Props) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/audit-logs"] });
       toast({ title: isEditing ? "Usuário atualizado!" : "Usuário criado!" });
       onClose();
     },

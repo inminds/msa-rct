@@ -43,6 +43,7 @@ export default function UsersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/audit-logs"] });
       toast({ title: "Usuário excluído." });
       setDeleteTarget(null);
     },

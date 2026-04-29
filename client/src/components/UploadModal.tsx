@@ -50,6 +50,11 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
       });
       queryClient.invalidateQueries({ queryKey: ["/api/uploads"] });
       queryClient.invalidateQueries({ queryKey: ["/api/uploads/recent"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ncm-excel"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ncm-excel-full"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ncm-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/audit-logs"] });
       handleClose();
     },
     onError: (error) => {
