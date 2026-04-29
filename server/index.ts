@@ -5,6 +5,16 @@ import { demoAuth } from "./middlewares/demoAuth.js"; // <-- ESM: usar .js no im
 import { initScheduler } from "./services/schedulerService";
 import { setupLocalAuth, seedUsers } from "./localAuth";
 
+// ── Validação de variáveis de ambiente obrigatórias em produção ──────────────
+if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
+  console.error(
+    "\n❌ ERRO CRÍTICO: SESSION_SECRET não está definido!\n" +
+    "   Em produção esta variável é obrigatória para proteger as sessões de login.\n" +
+    "   Defina SESSION_SECRET=<string longa e aleatória> no ambiente de produção.\n"
+  );
+  process.exit(1);
+}
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
