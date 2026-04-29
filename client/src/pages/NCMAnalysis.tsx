@@ -187,8 +187,8 @@ const PAGE_SIZE_OPTIONS = [
 export default function NCMAnalysis() {
   const [searchTerm, setSearchTerm] = useSessionFilter("ncm-search", "");
   const [statusFilter, setStatusFilter] = useSessionFilter("ncm-status", "");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useSessionFilter("ncm-page", 1);
+  const [pageSize, setPageSize] = useSessionFilter("ncm-pagesize", 20);
   const [selectedNCMs, setSelectedNCMs] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedNCM, setSelectedNCM] = useState<NCMRow | null>(null);

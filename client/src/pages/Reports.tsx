@@ -113,8 +113,8 @@ const TYPE_LABELS: Record<ReportType, string> = {
 export default function Reports() {
   const [typeFilter, setTypeFilter] = useSessionFilter("reports-type", "");
   const [statusFilter, setStatusFilter] = useSessionFilter("reports-status", "");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useSessionFilter("reports-page", 1);
+  const [pageSize, setPageSize] = useSessionFilter("reports-pagesize", 20);
 
   const [generateModal, setGenerateModal] = useState<{ type: ReportType; name: string } | null>(null);
   const [selectedFormat, setSelectedFormat] = useState<ReportFormat>("xlsx");

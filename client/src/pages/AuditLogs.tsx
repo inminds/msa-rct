@@ -217,8 +217,8 @@ function LogRow({ log }: { log: AuditLog }) {
 
 export default function AuditLogs() {
   const [category, setCategory] = useSessionFilter("auditlogs-category", "all");
-  const [pageSize, setPageSize] = useState(20);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useSessionFilter("auditlogs-pagesize", 20);
+  const [currentPage, setCurrentPage] = useSessionFilter("auditlogs-page", 1);
 
   useEffect(() => { setCurrentPage(1); }, [category, pageSize]);
 

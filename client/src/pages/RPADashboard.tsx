@@ -42,8 +42,8 @@ export default function RPADashboard() {
   const [statusFilter, setStatusFilter] = useSessionFilter("rpa-status", "all");
   const [searchTerm, setSearchTerm] = useSessionFilter("rpa-search", "");
   const [acceptAllOpen, setAcceptAllOpen] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useSessionFilter("rpa-page", 1);
+  const [pageSize, setPageSize] = useSessionFilter("rpa-pagesize", 20);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 

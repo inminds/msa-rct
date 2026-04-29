@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSessionFilter } from "@/hooks/useSessionFilter";
 import { useQuery } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
@@ -154,8 +155,8 @@ function UploadRow({ upload }: { upload: any }) {
 
 export default function Uploads() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useSessionFilter("uploads-page", 1);
+  const [pageSize, setPageSize] = useSessionFilter("uploads-pagesize", 20);
 
   const { data: uploads, isLoading } = useQuery({ queryKey: ["/api/uploads"] });
 
