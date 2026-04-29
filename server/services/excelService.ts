@@ -15,7 +15,7 @@ const _require = createRequire(import.meta.url);
 // Mantido apenas para compatibilidade com código legado que importa PYTHON
 export const PYTHON = process.env.PYTHON_PATH ?? "python";
 
-const EXCEL_PATH = path.resolve("bcoDados.xlsx");
+const EXCEL_PATH = path.resolve(process.env.EXCEL_PATH ?? "bcoDados.xlsx");
 const SHEET_NAME = "Plan1";
 
 // Mapeamento coluna → cabeçalho (igual ao helper Python)
