@@ -1326,17 +1326,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!firstName || !lastName || !email || !password) {
         return res.status(400).json({ message: "Todos os campos são obrigatórios" });
       }
-      // id is auto-generated — derive a short slug from email prefix, falling back to UUID
-      const rawId = email
-        ? email.split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "")
-        : null;
-      const baseId = rawId || randomUUID().slice(0, 8);
-      // Ensure uniqueness: append numeric suffix if needed
-      let id = baseId;
-      let suffix = 2;
-      while (await rawGet("SELECT id FROM users WHERE id = ?", [id])) {
-        id = `${baseId}${suffix++}`;
-      }
+      // id is a UUID v4 — universally unique, no collision risk
+      const id = randomUUID();
       const bcrypt = (await import("bcryptjs")).default;
       const hash = await bcrypt.hash(password, 10);
       await rawRun(
