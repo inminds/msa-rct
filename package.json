@@ -4,9 +4,9 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "setup-dev": "cross-env NODE_ENV=development tsx server/setup-db.ts",
-    "dev": "cross-env NODE_ENV=development tsx server/index.ts",
-    "clear-data": "cross-env NODE_ENV=development tsx server/clear-data.ts",
+    "setup-dev": "cross-env NODE_ENV=development tsx --env-file=.env.local server/setup-db.ts",
+    "dev": "cross-env NODE_ENV=development tsx --env-file=.env.local server/index.ts",
+    "clear-data": "cross-env NODE_ENV=development tsx --env-file=.env.local server/clear-data.ts",
     "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "cross-env NODE_ENV=production node dist/index.js",
     "check": "tsc",
