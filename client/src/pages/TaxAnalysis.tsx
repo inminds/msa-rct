@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSessionFilter } from "@/hooks/useSessionFilter";
 import { useQuery } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
@@ -18,9 +19,9 @@ import {
 } from "lucide-react";
 
 export default function TaxAnalysis() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [jurisdictionFilter, setJurisdictionFilter] = useState("");
-  const [taxTypeFilter, setTaxTypeFilter] = useState("");
+  const [searchTerm, setSearchTerm] = useSessionFilter("tax-search", "");
+  const [jurisdictionFilter, setJurisdictionFilter] = useSessionFilter("tax-jurisdiction", "");
+  const [taxTypeFilter, setTaxTypeFilter] = useSessionFilter("tax-type", "");
 
   const { data: recentAnalyses, isLoading } = useQuery({
     queryKey: ["/api/analyses/recent"],

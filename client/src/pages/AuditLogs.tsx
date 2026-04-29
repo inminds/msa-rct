@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSessionFilter } from "@/hooks/useSessionFilter";
 import { useQuery } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
@@ -215,7 +216,7 @@ function LogRow({ log }: { log: AuditLog }) {
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function AuditLogs() {
-  const [category, setCategory] = useState("all");
+  const [category, setCategory] = useSessionFilter("auditlogs-category", "all");
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
 

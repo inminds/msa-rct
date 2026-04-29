@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSessionFilter } from "@/hooks/useSessionFilter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
@@ -110,8 +111,8 @@ const TYPE_LABELS: Record<ReportType, string> = {
 };
 
 export default function Reports() {
-  const [typeFilter, setTypeFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useSessionFilter("reports-type", "");
+  const [statusFilter, setStatusFilter] = useSessionFilter("reports-status", "");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 

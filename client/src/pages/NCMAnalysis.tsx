@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useSessionFilter } from "@/hooks/useSessionFilter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
@@ -184,8 +185,8 @@ const PAGE_SIZE_OPTIONS = [
 ];
 
 export default function NCMAnalysis() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [searchTerm, setSearchTerm] = useSessionFilter("ncm-search", "");
+  const [statusFilter, setStatusFilter] = useSessionFilter("ncm-status", "");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [selectedNCMs, setSelectedNCMs] = useState<Set<string>>(new Set());

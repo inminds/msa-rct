@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSessionFilter } from "@/hooks/useSessionFilter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
@@ -22,8 +23,8 @@ interface User {
 }
 
 export default function UsersPage() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [roleFilter, setRoleFilter] = useState("");
+  const [searchTerm, setSearchTerm] = useSessionFilter("users-search", "");
+  const [roleFilter, setRoleFilter] = useSessionFilter("users-role", "");
   const [modalOpen, setModalOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);

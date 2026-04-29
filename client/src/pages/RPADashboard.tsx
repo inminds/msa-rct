@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSessionFilter } from "@/hooks/useSessionFilter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
@@ -38,8 +39,8 @@ function StatusBadge({ status }: { status: NCMChange["status"] }) {
 }
 
 export default function RPADashboard() {
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useSessionFilter("rpa-status", "all");
+  const [searchTerm, setSearchTerm] = useSessionFilter("rpa-search", "");
   const [acceptAllOpen, setAcceptAllOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
