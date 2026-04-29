@@ -168,7 +168,6 @@ export default function UsersPage() {
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Usuário</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Login</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>
@@ -190,7 +189,6 @@ export default function UsersPage() {
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-600">{user.id}</td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center text-sm text-gray-600 gap-1">
                               <Mail className="w-3.5 h-3.5" />{user.email || "—"}
