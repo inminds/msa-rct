@@ -5,6 +5,7 @@
  */
 import session from "express-session";
 import passport from "passport";
+import { randomBytes } from "crypto";
 import { Strategy as LocalStrategy } from "passport-local";
 import MemoryStore from "memorystore";
 import bcrypt from "bcryptjs";
@@ -53,6 +54,10 @@ const SEED_USERS = [
 
 export async function seedUsers() {
   for (const u of SEED_USERS) {
+    if (!u.password) {
+      console.warn(`[localAuth] Senha não configurada para "${u.email}" — defina a env var correspondente. Seed ignorado.`);
+      continue;
+    }
     const existing = await rawGet(
       "SELECT id, role, password_hash FROM users WHERE id = ?",
       [u.id]
@@ -153,7 +158,7 @@ export function setupLocalAuth(app: Express) {
 
   app.use(
     session({
-      secret: process.env.SESSION_SECRET ?? "dev-secret-rct-2024",
+      secret: process.env.SESSION_SECRET ?? randomBytes(32).toString("hex"),
       store,
       resave: false,
       saveUninitialized: false,

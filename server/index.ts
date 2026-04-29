@@ -12,6 +12,7 @@ if (process.env.NODE_ENV === "production") {
     !process.env.SEED_PASSWORD_THAYSSA && "SEED_PASSWORD_THAYSSA",
     !process.env.SEED_PASSWORD_YURI    && "SEED_PASSWORD_YURI",
     !process.env.SEED_PASSWORD_ADMIN   && "SEED_PASSWORD_ADMIN",
+    !process.env.NODE_API_KEY          && "NODE_API_KEY",
   ].filter(Boolean);
 
   if (missing.length > 0) {
