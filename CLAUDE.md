@@ -19,8 +19,8 @@ autônoma agendada (sem interação humana após a primeira execução).
 ---
 
 ## Credenciais Econet
-- **Usuário:** `onu41041`
-- **Senha:** `ms6003`
+- **Usuário:** via env var `ECONET_USERNAME`
+- **Senha:** via env var `ECONET_PASSWORD`
 - **URL:** `https://www.econeteditora.com.br/`
 
 ---

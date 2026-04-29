@@ -32,8 +32,8 @@ XLSX_PATH  = BASE_DIR / "bcoDados.xlsx"
 SESSION    = BASE_DIR / "session.json"
 
 ECONET_URL = "https://www.econeteditora.com.br/"
-LOGIN      = "onu41041"
-SENHA      = "ms6003"
+LOGIN      = os.getenv("ECONET_USERNAME", "")
+SENHA      = os.getenv("ECONET_PASSWORD", "")
 
 # Abas que nunca devem ser extraídas
 SKIP_TABS = {"Exportação", "Importação", "Reforma Tributária", "Reforma Tributária - NOVO"}

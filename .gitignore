@@ -12,3 +12,15 @@ vite.config.ts.*
 *.db
 *.db-wal
 *.db-shm
+
+# Scripts de teste do scraper (contêm credenciais hardcoded)
+test_menu.py
+test_menu_all.py
+test_pis_cofins_click.py
+login_interactive.py
+
+# Sessão salva do scraper
+session.json
+session_cookies.json
+rpa_ncm_scanner/chrome_profile/
+rpa_ncm_scanner/screenshots/
