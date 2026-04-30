@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { Plus, Bell } from "lucide-react";
+import { Plus } from "lucide-react";
+import { NotificationBell } from "@/components/NotificationBell";
 
 interface TopBarProps {
   title: string;
@@ -30,9 +31,7 @@ export function TopBar({ title, subtitle, onNewUpload }: TopBarProps) {
               Novo Upload
             </Button>
           )}
-          <div className="relative">
-            <Bell className="text-gray-400 text-xl" />
-          </div>
+          <NotificationBell />
         </div>
       </div>
     </header>

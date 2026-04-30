@@ -1009,6 +1009,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ─── Notifications ───────────────────────────────────────────────────────
+
+  app.get("/api/notifications", isAuthenticated, async (req: any, res) => {
+    const { id: userId } = getUserInfo(req);
+    const notifications: {
+      id: string;
+      type: "scan_completed" | "ncm_changes" | "scan_request_update";
+      title: string;
+      message: string;
+      timestamp: string;
+      href: string;
+    }[] = [];
+
+    // 1. Scan NCM concluído — existe scan_date recente em ncm_changes e scraper não está rodando
+    const scanRunning = getActivePid() !== null;
+    if (!scanRunning) {
+      const lastScanDate = await rawGet(
+        `SELECT scan_date FROM ncm_changes ORDER BY scan_date DESC LIMIT 1`
+      );
+      if (lastScanDate?.scan_date) {
+        const changesOnLastScan = await rawGet(
+          `SELECT COUNT(*) as total FROM ncm_changes WHERE scan_date = ?`,
+          [lastScanDate.scan_date]
+        );
+        const total = changesOnLastScan?.total ?? 0;
+        notifications.push({
+          id: `scan_completed_${lastScanDate.scan_date}`,
+          type: "scan_completed",
+          title: "Varredura NCM concluída",
+          message:
+            total > 0
+              ? `${total} alteração(ões) detectada(s) nos NCMs`
+              : "Nenhuma alteração detectada",
+          timestamp: lastScanDate.scan_date,
+          href: "/ncm-analysis",
+        });
+      }
+    }
+
+    // 2. Alterações de NCM pendentes de revisão
+    const pendingChanges = await rawGet(
+      `SELECT COUNT(*) as total, MAX(scan_date) as latest FROM ncm_changes WHERE status = 'pending'`
+    );
+    const pendingTotal = pendingChanges?.total ?? 0;
+    if (pendingTotal > 0) {
+      notifications.push({
+        id: `ncm_changes_pending_${pendingChanges!.latest}`,
+        type: "ncm_changes",
+        title: "Alterações de NCM pendentes",
+        message: `${pendingTotal} alteração(ões) aguardam revisão`,
+        timestamp: pendingChanges!.latest,
+        href: "/ncm-analysis",
+      });
+    }
+
+    // 3. Atualização da solicitação de scan do usuário (aprovada ou rejeitada, últimos 7 dias)
+    const myRequest = await rawGet(
+      `SELECT id, status, rejection_note, updated_at
+       FROM scan_requests
+       WHERE requested_by = ?
+         AND status IN ('approved', 'rejected')
+         AND updated_at >= datetime('now', '-7 days')
+       ORDER BY updated_at DESC LIMIT 1`,
+      [userId]
+    );
+    if (myRequest) {
+      notifications.push({
+        id: `scan_request_${myRequest.id}_${myRequest.status}`,
+        type: "scan_request_update",
+        title:
+          myRequest.status === "approved"
+            ? "Solicitação de scan aprovada"
+            : "Solicitação de scan rejeitada",
+        message:
+          myRequest.status === "rejected"
+            ? `Motivo: ${myRequest.rejection_note || "Não informado"}`
+            : "Sua solicitação foi aprovada e está sendo processada",
+        timestamp: myRequest.updated_at,
+        href: "/ncm-analysis",
+      });
+    }
+
+    res.json(notifications);
+  });
+
   // ─── NCM Scan endpoints (consumed by Python rpa_ncm_scanner) ─────────────
 
   // GET /api/ncm-scan/pending — returns unique NCMs awaiting Econet scan
