@@ -19,7 +19,7 @@ interface ScheduleConfig {
   enabled: boolean;
   frequency: "weekly" | "monthly";
   dayOfWeek: number;   // 0–6
-  dayOfMonth: number;  // 1–28
+  dayOfMonth: number;  // 1–31
   hour: number;
   minute: number;
   mode: "incompletos" | "todos";
@@ -45,7 +45,7 @@ const DAYS_OF_WEEK = [
   { value: "6", label: "Sábado" },
 ];
 
-const DAYS_OF_MONTH = Array.from({ length: 28 }, (_, i) => ({
+const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, i) => ({
   value: String(i + 1),
   label: `Dia ${i + 1}`,
 }));

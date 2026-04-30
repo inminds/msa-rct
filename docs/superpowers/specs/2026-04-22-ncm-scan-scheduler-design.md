@@ -16,7 +16,7 @@ Tabela `scan_schedule` no schema Drizzle existente (`shared/schema.ts`). Sempre 
 | `enabled` | boolean | agendamento ativo ou não |
 | `frequency` | text | `'weekly'` ou `'monthly'` |
 | `day_of_week` | integer | 0–6 (Dom=0 … Sáb=6), usado quando `frequency = 'weekly'` |
-| `day_of_month` | integer | 1–28, usado quando `frequency = 'monthly'` |
+| `day_of_month` | integer | 1–31, usado quando `frequency = 'monthly'` |
 | `hour` | integer | 0–23 |
 | `minute` | integer | 0–59 |
 | `mode` | text | `'incompletos'` ou `'todos'` |
@@ -79,7 +79,7 @@ Novo componente em `client/src/components/ScheduleModal.tsx`.
 - **Frequência** — Select: `Semanal` / `Mensal`
 - **Dia** — Select condicional:
   - Semanal: dias da semana (Domingo … Sábado)
-  - Mensal: número 1–28
+  - Mensal: número 1–31
 - **Horário** — dois Selects: hora (00–23) e minuto (00, 15, 30, 45)
 - **Modo** — Select: `Buscar Pendentes` / `Buscar Todos`
 - **Próxima execução** — texto calculado localmente com base nos campos, ex: "Seg 14/07 às 08:00"
