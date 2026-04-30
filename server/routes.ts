@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { isAuthenticated } from "./replitAuth";
-import { isAdmin } from "./localAuth";
+import { isAdmin, SEED_USER_IDS } from "./localAuth";
 import { FileProcessor } from "./services/fileProcessor";
 import { TaxCalculator } from "./services/taxCalculator";
 import multer from "multer";
@@ -1661,8 +1661,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = (req.user as any).id;
       let statusFilter: string;
-      if (userId === "thayssa") statusFilter = "pending_thayssa";
-      else if (userId === "yuri") statusFilter = "pending_yuri";
+      if (userId === SEED_USER_IDS.thayssa) statusFilter = "pending_thayssa";
+      else if (userId === SEED_USER_IDS.yuri) statusFilter = "pending_yuri";
       else return res.json([]);
       const rows = await rawAll(
         `SELECT sr.*, u.first_name, u.last_name FROM scan_requests sr
@@ -1694,7 +1694,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!row) { return res.status(404).json({ message: "Solicitação não encontrada" }); }
       const now = new Date().toISOString();
       if (row.status === "pending_thayssa") {
-        if (userId !== "thayssa") { return res.status(403).json({ message: "Somente a Thayssa pode aprovar nesta etapa" }); }
+        if (userId !== SEED_USER_IDS.thayssa) { return res.status(403).json({ message: "Somente a Thayssa pode aprovar nesta etapa" }); }
         await rawRun("UPDATE scan_requests SET status='pending_yuri', updated_at=? WHERE id=?", [now, requestId]);
         const { id: apUserId, name: apUserName } = getUserInfo(req);
         logAudit(apUserId, apUserName, "SCAN_APPROVED_THAYSSA", "scan", {
@@ -1706,7 +1706,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: true, newStatus: "pending_yuri" });
       }
       if (row.status === "pending_yuri") {
-        if (userId !== "yuri") { return res.status(403).json({ message: "Somente o Yuri pode aprovar nesta etapa" }); }
+        if (userId !== SEED_USER_IDS.yuri) { return res.status(403).json({ message: "Somente o Yuri pode aprovar nesta etapa" }); }
         const activePid = getActivePid();
         if (activePid !== null) {
           try { process.kill(activePid, 0); return res.status(409).json({ message: "Já há uma varredura em andamento. Tente novamente em instantes." }); }
@@ -1754,8 +1754,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { note } = req.body as { note?: string };
       const row = await rawGet("SELECT * FROM scan_requests WHERE id = ?", [requestId]) as any;
       if (!row) { return res.status(404).json({ message: "Solicitação não encontrada" }); }
-      if (row.status === "pending_thayssa" && userId !== "thayssa") { return res.status(403).json({ message: "Somente a Thayssa pode rejeitar nesta etapa" }); }
-      if (row.status === "pending_yuri" && userId !== "yuri") { return res.status(403).json({ message: "Somente o Yuri pode rejeitar nesta etapa" }); }
+      if (row.status === "pending_thayssa" && userId !== SEED_USER_IDS.thayssa) { return res.status(403).json({ message: "Somente a Thayssa pode rejeitar nesta etapa" }); }
+      if (row.status === "pending_yuri" && userId !== SEED_USER_IDS.yuri) { return res.status(403).json({ message: "Somente o Yuri pode rejeitar nesta etapa" }); }
       if (!["pending_thayssa", "pending_yuri"].includes(row.status)) { return res.status(400).json({ message: "Solicitação não está em estado rejeitável" }); }
       const now = new Date().toISOString();
       await rawRun(
