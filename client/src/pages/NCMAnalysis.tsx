@@ -63,7 +63,8 @@ interface ScanRequest {
   id: number;
   requestedBy: string;
   requestedByName?: string;
-  mode: "incompletos" | "todos";
+  mode: "incompletos" | "todos" | "selecionados";
+  ncms?: string[] | null;
   status: "pending_step1" | "pending_step2" | "approved" | "rejected";
   rejectedBy?: string;
   rejectionNote?: string;
@@ -628,13 +629,29 @@ export default function NCMAnalysis() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {pendingRequests.map((req) => (
-                  <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white rounded-lg p-3 border border-orange-100">
-                    <div className="flex flex-col gap-0.5">
+                  <div key={req.id} className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 bg-white rounded-lg p-3 border border-orange-100">
+                    <div className="flex flex-col gap-1 flex-1 min-w-0">
                       <span className="font-medium text-gray-900 text-sm">{req.requestedByName}</span>
                       <span className="text-xs text-gray-500">
-                        {req.mode === "todos" ? "Buscar Todos os NCMs" : "Buscar NCMs Pendentes"} •{" "}
-                        {formatUTC(req.createdAt, "dd/MM/yyyy HH:mm")}
+                        {req.mode === "todos"
+                          ? "Buscar Todos os NCMs"
+                          : req.mode === "selecionados" && req.ncms?.length
+                          ? `Buscar NCMs Selecionados (${req.ncms.length})`
+                          : "Buscar NCMs Pendentes"}{" "}
+                        • {formatUTC(req.createdAt, "dd/MM/yyyy HH:mm")}
                       </span>
+                      {req.mode === "selecionados" && req.ncms && req.ncms.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {req.ncms.map((ncm) => (
+                            <span
+                              key={ncm}
+                              className="inline-block rounded bg-orange-100 px-1.5 py-0.5 text-xs font-mono text-orange-800"
+                            >
+                              {ncm}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       {rejectTarget?.id === req.id ? (
