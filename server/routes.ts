@@ -288,12 +288,6 @@ async function generateDemoData(userId: string): Promise<void> {
   }
 }
 
-// Clear demo data function
-async function clearDemoData(): Promise<void> {
-  // This would clear demo data from the database
-  // For now, we'll just reset the storage to use real database queries
-  console.log("Demo data cleared - returning to real database queries");
-}
 
 // Configure multer for file uploads
 const upload = multer({
@@ -759,20 +753,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Clear all database (development only)
-  app.post('/api/admin/clear-database', isAdmin, async (req, res) => {
-    if (process.env.NODE_ENV !== 'production') {
-      try {
-        await storage.clearAllData();
-        res.json({ message: "✅ All database data cleared successfully" });
-      } catch (error) {
-        console.error("Error clearing database:", error);
-        res.status(500).json({ message: "Failed to clear database" });
-      }
-    } else {
-      res.status(403).json({ message: "This endpoint is only available in development mode" });
-    }
-  });
 
   // Demo data generation endpoint
   app.post('/api/generate-demo-data', isAdmin, async (req: any, res) => {
@@ -806,16 +786,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Clear demo data endpoint
-  app.post('/api/clear-demo-data', isAdmin, async (req: any, res) => {
-    try {
-      await clearDemoData();
-      res.json({ message: "Demo data cleared successfully" });
-    } catch (error) {
-      console.error("Error clearing demo data:", error);
-      res.status(500).json({ message: "Failed to clear demo data" });
-    }
-  });
 
   // ====== RPA LEGAL INTELLIGENCE INTEGRATION ENDPOINTS ======
 

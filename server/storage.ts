@@ -30,8 +30,6 @@ export interface IStorage {
   getUpload(id: string): Promise<Upload | undefined>;
   updateUploadStatus(id: string, status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'ERROR', errorMessage?: string): Promise<void>;
   deleteUpload(id: string): Promise<void>;
-  clearAllData(): Promise<void>;
-
   // NCM operations
   createNCMItem(ncmItem: InsertNCMItem): Promise<NCMItem>;
   getNCMItemsByUpload(uploadId: string): Promise<NCMItem[]>;
@@ -287,14 +285,6 @@ export class DatabaseStorage implements IStorage {
 
     // Delete the upload itself
     await db.delete(uploads).where(eq(uploads.id, id));
-  }
-
-  async clearAllData(): Promise<void> {
-    // Delete in correct order due to foreign key constraints
-    await db.delete(tributes);
-    await db.delete(ncmItems);
-    await db.delete(uploads);
-    console.log('🗑️  All data cleared from database');
   }
 
   async getPendingNCMs(): Promise<{ ncmCode: string; description: string | null }[]> {
