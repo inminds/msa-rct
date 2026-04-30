@@ -21,7 +21,14 @@ import { rawGet, rawAll, rawRun } from "./rawDb.js";
 import { randomUUID } from "crypto";
 import fs from "fs";
 
-const INTERNAL_API_KEY = process.env.NODE_API_KEY ?? "dev-internal-key";
+const INTERNAL_API_KEY = process.env.NODE_API_KEY ?? (() => {
+  const generated = randomUUID();
+  console.warn(
+    "[security] NODE_API_KEY não definida — usando chave temporária gerada aleatoriamente.\n" +
+    "           Defina NODE_API_KEY no .env.local para uso consistente no desenvolvimento."
+  );
+  return generated;
+})();
 
 function isInternalRequest(req: any): boolean {
   return req.headers["x-internal-key"] === INTERNAL_API_KEY;
