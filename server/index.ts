@@ -3,7 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { demoAuth } from "./middlewares/demoAuth.js"; // <-- ESM: usar .js no import
 import { initScheduler } from "./services/schedulerService";
-import { setupLocalAuth, seedUsers } from "./localAuth";
+import { setupLocalAuth, seedUsers, seedPermissions } from "./localAuth";
 
 // ── Validação de variáveis de ambiente obrigatórias em produção ──────────────
 if (process.env.NODE_ENV === "production") {
@@ -62,6 +62,7 @@ app.use((req, res, next) => {
   // Local auth runs in all environments (dev + production)
   setupLocalAuth(app);
   await seedUsers();
+  await seedPermissions();
 
   const server = await registerRoutes(app);
   await initScheduler();

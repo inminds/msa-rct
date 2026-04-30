@@ -64,7 +64,7 @@ interface ScanRequest {
   requestedBy: string;
   requestedByName?: string;
   mode: "incompletos" | "todos";
-  status: "pending_thayssa" | "pending_yuri" | "approved" | "rejected";
+  status: "pending_step1" | "pending_step2" | "approved" | "rejected";
   rejectedBy?: string;
   rejectionNote?: string;
   createdAt: string;
@@ -124,22 +124,22 @@ function RequestStatusCard({
   onNewRequest: () => void;
   onDismiss: () => void;
 }) {
-  if (request.status === "pending_thayssa") {
+  if (request.status === "pending_step1") {
     return (
       <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-yellow-800">
         <Clock className="w-4 h-4 shrink-0" />
-        <span className="text-sm font-medium flex-1">Aguardando aprovação da <strong>Thayssa</strong> — solicitação de varredura enviada.</span>
+        <span className="text-sm font-medium flex-1">Aguardando aprovação — <strong>Etapa 1</strong>. Solicitação de varredura enviada.</span>
         <button onClick={onDismiss} className="text-yellow-500 hover:text-yellow-700 transition-colors">
           <X className="w-4 h-4" />
         </button>
       </div>
     );
   }
-  if (request.status === "pending_yuri") {
+  if (request.status === "pending_step2") {
     return (
       <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-orange-800">
         <Clock className="w-4 h-4 shrink-0" />
-        <span className="text-sm font-medium flex-1">Thayssa aprovou. Aguardando aprovação do <strong>Yuri</strong>.</span>
+        <span className="text-sm font-medium flex-1">Etapa 1 aprovada. Aguardando aprovação — <strong>Etapa 2</strong>.</span>
         <button onClick={onDismiss} className="text-orange-500 hover:text-orange-700 transition-colors">
           <X className="w-4 h-4" />
         </button>
@@ -478,7 +478,7 @@ export default function NCMAnalysis() {
 
   // ── Derived state ────────────────────────────────────────────────────────
 
-  const hasActiveRequest = !isAdmin && (myRequest?.status === "pending_thayssa" || myRequest?.status === "pending_yuri");
+  const hasActiveRequest = !isAdmin && (myRequest?.status === "pending_step1" || myRequest?.status === "pending_step2");
 
   const normalize = (s: string) =>
     s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");

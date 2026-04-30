@@ -150,6 +150,14 @@ if (isDev) {
     );
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_category ON audit_logs(category);
+    CREATE TABLE IF NOT EXISTS user_permissions (
+      user_id VARCHAR NOT NULL,
+      permission VARCHAR NOT NULL,
+      granted_by VARCHAR,
+      granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, permission),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
   `);
 
   db = drizzleSqlite({ client: sqliteDb, schema });
@@ -168,6 +176,12 @@ if (isDev) {
   const scanReqCols = (sqliteDb.pragma('table_info(scan_requests)') as { name: string }[]).map((c: any) => c.name);
   if (!scanReqCols.includes('ncms'))
     sqliteDb.exec("ALTER TABLE scan_requests ADD COLUMN ncms TEXT");
+
+  // Migrar status de scan_requests para nomes genéricos (independentes de usuário)
+  sqliteDb.exec(`
+    UPDATE scan_requests SET status = 'pending_step1' WHERE status = 'pending_thayssa';
+    UPDATE scan_requests SET status = 'pending_step2' WHERE status = 'pending_yuri';
+  `);
 
   // ── Migração: padronizar IDs legados dos usuários seed para UUID ──────────
   // Roda apenas se o ID antigo ainda existir — idempotente, seguro em todo boot.
@@ -251,6 +265,15 @@ if (isDev) {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR;
+    CREATE TABLE IF NOT EXISTS user_permissions (
+      user_id VARCHAR NOT NULL,
+      permission VARCHAR NOT NULL,
+      granted_by VARCHAR,
+      granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, permission)
+    );
+    UPDATE scan_requests SET status = 'pending_step1' WHERE status = 'pending_thayssa';
+    UPDATE scan_requests SET status = 'pending_step2' WHERE status = 'pending_yuri';
   `).catch((err: Error) => {
     console.warn('[db] Aviso ao criar tabelas extras no PostgreSQL:', err.message);
   });
