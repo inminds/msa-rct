@@ -1055,15 +1055,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const { id: userId } = getUserInfo(req);
     const notifications: {
       id: string;
-      type: "scan_completed" | "ncm_changes" | "scan_request_update" | "upload_processed" | "ncm_pending_scan";
+      type: "scan_completed" | "ncm_changes" | "scan_request_update" | "upload_processed" | "ncm_pending_scan" | "scan_running" | "scan_scheduled" | "scan_request_pending";
       title: string;
       message: string;
       timestamp: string;
       href: string;
+      live?: boolean;
     }[] = [];
 
-    // 1. Scan NCM concluído — existe scan_date recente em ncm_changes e scraper não está rodando
+    // 0a. Varredura em andamento (live)
     const scanRunning = getActivePid() !== null;
+    if (scanRunning) {
+      notifications.push({
+        id: "scan_running_live",
+        type: "scan_running",
+        title: "Varredura em andamento",
+        message: "O RPA está consultando os NCMs na Econet agora. Os dados serão atualizados ao término.",
+        timestamp: new Date().toISOString(),
+        href: "/ncm-analysis",
+        live: true,
+      });
+    }
+
+    // 0b. Próxima varredura agendada (live)
+    const schedule = await rawGet("SELECT * FROM scan_schedule WHERE id = 1") as any;
+    if (schedule?.enabled) {
+      const now = new Date();
+      const h = schedule.hour ?? 8;
+      const m = schedule.minute ?? 0;
+      let nextRun: Date | null = null;
+      for (let i = 1; i <= 31; i++) {
+        const candidate = new Date(now);
+        candidate.setDate(now.getDate() + i);
+        candidate.setHours(h, m, 0, 0);
+        const match = schedule.frequency === "monthly"
+          ? candidate.getDate() === (schedule.day_of_month ?? 1)
+          : candidate.getDay() === (schedule.day_of_week ?? 1);
+        if (match) { nextRun = candidate; break; }
+      }
+      if (nextRun) {
+        const dayNames = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const dateStr = `${pad(nextRun.getDate())}/${pad(nextRun.getMonth() + 1)} às ${pad(h)}:${pad(m)}`;
+        notifications.push({
+          id: `scan_scheduled_${nextRun.toISOString()}`,
+          type: "scan_scheduled",
+          title: "Varredura agendada",
+          message: `Próxima execução: ${dayNames[nextRun.getDay()]}, ${dateStr}`,
+          timestamp: new Date().toISOString(),
+          href: "/ncm-analysis",
+          live: true,
+        });
+      }
+    }
+
+    // 0c. Solicitações pendentes de aprovação (live — só para quem tem permissão)
+    const canStep1 = await hasPermission(userId, PERMISSIONS.APROVAR_ETAPA1);
+    const canStep2 = await hasPermission(userId, PERMISSIONS.APROVAR_ETAPA2);
+    if (canStep1 || canStep2) {
+      const statuses: string[] = [];
+      if (canStep1) statuses.push("pending_step1");
+      if (canStep2) statuses.push("pending_step2");
+      const placeholders = statuses.map(() => "?").join(",");
+      const pendingReqs = await rawGet(
+        `SELECT COUNT(*) as total, MAX(created_at) as latest FROM scan_requests WHERE status IN (${placeholders})`,
+        statuses
+      ) as any;
+      const pendingReqTotal = Number(pendingReqs?.total ?? 0);
+      if (pendingReqTotal > 0) {
+        notifications.push({
+          id: `scan_request_pending_${pendingReqs.latest}`,
+          type: "scan_request_pending",
+          title: "Solicitação aguarda aprovação",
+          message: `${pendingReqTotal} solicitação(ões) de varredura aguardam sua aprovação`,
+          timestamp: pendingReqs.latest,
+          href: "/ncm-analysis",
+          live: true,
+        });
+      }
+    }
+
+    // 1. Scan NCM concluído — existe scan_date recente em ncm_changes e scraper não está rodando
     if (!scanRunning) {
       const lastScanDate = await rawGet(
         `SELECT scan_date FROM ncm_changes ORDER BY scan_date DESC LIMIT 1`

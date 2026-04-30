@@ -1,18 +1,19 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Bell, Check, X, ScanSearch, GitCompareArrows, ClipboardCheck, FileCheck, FileX, Clock } from "lucide-react";
+import { Bell, Check, X, ScanSearch, GitCompareArrows, ClipboardCheck, FileCheck, FileX, Clock, Loader2, CalendarClock, ClipboardList } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { distanceUTC } from "@/lib/dateUtils";
 
 interface Notification {
   id: string;
-  type: "scan_completed" | "ncm_changes" | "scan_request_update" | "upload_processed" | "ncm_pending_scan";
+  type: "scan_completed" | "ncm_changes" | "scan_request_update" | "upload_processed" | "ncm_pending_scan" | "scan_running" | "scan_scheduled" | "scan_request_pending";
   title: string;
   message: string;
   timestamp: string;
   href: string;
+  live?: boolean;
 }
 
 // read: { id → readAt (ms) }  — lidas mas ainda visíveis
@@ -44,11 +45,14 @@ function saveDeleted(set: Set<string>) {
 }
 
 const typeIcon: Record<Notification["type"], React.ReactNode> = {
-  scan_completed:      <ScanSearch className="h-4 w-4 text-green-500" />,
-  ncm_changes:         <GitCompareArrows className="h-4 w-4 text-amber-500" />,
-  scan_request_update: <ClipboardCheck className="h-4 w-4 text-blue-500" />,
-  upload_processed:    <FileCheck className="h-4 w-4 text-green-600" />,
-  ncm_pending_scan:    <Clock className="h-4 w-4 text-orange-500" />,
+  scan_completed:        <ScanSearch className="h-4 w-4 text-green-500" />,
+  ncm_changes:           <GitCompareArrows className="h-4 w-4 text-amber-500" />,
+  scan_request_update:   <ClipboardCheck className="h-4 w-4 text-blue-500" />,
+  upload_processed:      <FileCheck className="h-4 w-4 text-green-600" />,
+  ncm_pending_scan:      <Clock className="h-4 w-4 text-orange-500" />,
+  scan_running:          <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />,
+  scan_scheduled:        <CalendarClock className="h-4 w-4 text-purple-500" />,
+  scan_request_pending:  <ClipboardList className="h-4 w-4 text-orange-500" />,
 };
 
 function notificationIcon(n: Notification) {
@@ -68,8 +72,11 @@ export function NotificationBell() {
     refetchInterval: 30_000,
   });
 
-  // Notificações visíveis (não deletadas)
-  const visible = all.filter((n) => n.type !== "ncm_pending_scan" && !deleted.has(n.id));
+  // Notificações "ao vivo" — sempre visíveis no topo, sem controles de lida/deletar
+  const liveNotifs = all.filter((n) => n.live);
+
+  // Notificações persistentes (não deletadas, não do tipo ncm_pending_scan legacy)
+  const visible = all.filter((n) => !n.live && n.type !== "ncm_pending_scan" && !deleted.has(n.id));
 
   // Separa não lidas e lidas; lidas ordenadas pela mais recente no topo
   const unread  = visible.filter((n) => !read.has(n.id));
@@ -77,7 +84,7 @@ export function NotificationBell() {
     .filter((n) => read.has(n.id))
     .sort((a, b) => (read.get(b.id) ?? 0) - (read.get(a.id) ?? 0));
 
-  const unreadCount = unread.length;
+  const unreadCount = unread.length + liveNotifs.length;
 
   useEffect(() => { saveRead(read); },    [read]);
   useEffect(() => { saveDeleted(deleted); }, [deleted]);
@@ -201,23 +208,54 @@ export function NotificationBell() {
         </div>
 
         <div className="max-h-96 overflow-y-auto">
-          {visible.length === 0 ? (
+          {liveNotifs.length === 0 && visible.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-gray-400">
               <Bell className="h-8 w-8 mb-2 opacity-30" />
               <p className="text-sm">Nenhuma notificação</p>
             </div>
           ) : (
             <>
-              {unread.map((n) => <NotificationRow key={n.id} n={n} isRead={false} />)}
-
-              {readList.length > 0 && (
+              {/* Notificações ao vivo — topo, sem controles */}
+              {liveNotifs.length > 0 && (
                 <>
-                  {unread.length > 0 && (
+                  <div className="px-4 py-1.5 bg-blue-50 border-b">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-400">Agora</p>
+                  </div>
+                  {liveNotifs.map((n) => (
+                    <div
+                      key={n.id}
+                      onClick={() => { setOpen(false); navigate(n.href); }}
+                      className="flex items-start gap-3 px-4 py-3 border-b last:border-b-0 hover:bg-blue-50 cursor-pointer transition-colors bg-blue-50/40"
+                    >
+                      <div className="mt-0.5 shrink-0">{notificationIcon(n)}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{n.title}</p>
+                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {/* Notificações persistentes */}
+              {visible.length > 0 && (
+                <>
+                  {liveNotifs.length > 0 && (
                     <div className="px-4 py-1.5 bg-gray-50 border-b">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Lidas</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Notificações</p>
                     </div>
                   )}
-                  {readList.map((n) => <NotificationRow key={n.id} n={n} isRead={true} />)}
+                  {unread.map((n) => <NotificationRow key={n.id} n={n} isRead={false} />)}
+                  {readList.length > 0 && (
+                    <>
+                      {unread.length > 0 && (
+                        <div className="px-4 py-1.5 bg-gray-50 border-b">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Lidas</p>
+                        </div>
+                      )}
+                      {readList.map((n) => <NotificationRow key={n.id} n={n} isRead={true} />)}
+                    </>
+                  )}
                 </>
               )}
             </>
