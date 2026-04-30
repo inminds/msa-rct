@@ -223,6 +223,19 @@ export default function NCMAnalysis() {
   });
   const isAdmin = currentUser?.role === "ADMIN";
 
+  const { data: myPermissions = [] } = useQuery<string[]>({
+    queryKey: ["/api/me/permissions"],
+    queryFn: async () => {
+      const res = await fetch("/api/me/permissions", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!currentUser && !isAdmin,
+  });
+  const canApproveStep1 = isAdmin || myPermissions.includes("aprovar_etapa1");
+  const canApproveStep2 = isAdmin || myPermissions.includes("aprovar_etapa2");
+  const canApprove = canApproveStep1 || canApproveStep2;
+
   const { data: ncmRows, isLoading, refetch } = useQuery<NCMRow[]>({
     queryKey: ["/api/ncm-excel"],
   });
@@ -590,8 +603,8 @@ export default function NCMAnalysis() {
           </div>
         )}
 
-        {/* Card de status do pedido (apenas USER) */}
-        {!isAdmin && myRequest && !requestDismissed && (
+        {/* Card de status do pedido (apenas quem não pode aprovar) */}
+        {!canApprove && myRequest && !requestDismissed && (
           <RequestStatusCard
             request={myRequest}
             onNewRequest={() => {
@@ -604,8 +617,8 @@ export default function NCMAnalysis() {
 
         <div className="p-6 space-y-6">
 
-          {/* Painel de solicitações pendentes (apenas ADMIN quando há pendências) */}
-          {isAdmin && pendingRequests.length > 0 && (
+          {/* Painel de solicitações pendentes (quem tem permissão de aprovar) */}
+          {canApprove && pendingRequests.length > 0 && (
             <Card className="border-orange-200 bg-orange-50">
               <CardHeader className="pb-3">
                 <CardTitle className="text-orange-800 flex items-center gap-2 text-base">

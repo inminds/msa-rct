@@ -543,6 +543,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const id = randomUUID();
     const userId = (req.user as any)?.id ?? (req.user as any)?.claims?.sub ?? "unknown";
+    if (!await hasPermission(userId, PERMISSIONS.EXPORTAR)) return res.status(403).json({ message: "Sem permissão para exportar relatórios" });
 
     await rawRun(
       "INSERT INTO reports (id, name, type, format, status, created_by) VALUES (?, ?, ?, ?, 'pending', ?)",
@@ -603,6 +604,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // GET /api/reports/:id/download
   app.get("/api/reports/:id/download", isAuthenticated, async (req: any, res) => {
+    const dlUserId = (req.user as any)?.id ?? (req.user as any)?.claims?.sub ?? "unknown";
+    if (!await hasPermission(dlUserId, PERMISSIONS.EXPORTAR)) return res.status(403).json({ message: "Sem permissão para exportar relatórios" });
     const report = await rawGet("SELECT * FROM reports WHERE id=?", [req.params.id]) as any;
     if (!report || report.status !== "completed" || !report.file_path) {
       return res.status(404).json({ message: "Arquivo não disponível" });
