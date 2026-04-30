@@ -1015,7 +1015,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const { id: userId } = getUserInfo(req);
     const notifications: {
       id: string;
-      type: "scan_completed" | "ncm_changes" | "scan_request_update";
+      type: "scan_completed" | "ncm_changes" | "scan_request_update" | "upload_processed" | "ncm_pending_scan";
       title: string;
       message: string;
       timestamp: string;
@@ -1087,6 +1087,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ? `Motivo: ${myRequest.rejection_note || "Não informado"}`
             : "Sua solicitação foi aprovada e está sendo processada",
         timestamp: myRequest.updated_at,
+        href: "/ncm-analysis",
+      });
+    }
+
+    // 4. Uploads processados nas últimas 24h (do usuário — sucesso ou erro)
+    const recentUploads = await rawAll(
+      `SELECT id, filename, status, processed_at, error_message
+       FROM uploads
+       WHERE user_id = ?
+         AND status IN ('COMPLETED', 'ERROR')
+         AND processed_at >= datetime('now', '-24 hours')
+       ORDER BY processed_at DESC
+       LIMIT 3`,
+      [userId]
+    );
+    for (const up of recentUploads ?? []) {
+      notifications.push({
+        id: `upload_processed_${up.id}`,
+        type: "upload_processed",
+        title: up.status === "COMPLETED" ? "Upload processado com sucesso" : "Erro no processamento do upload",
+        message:
+          up.status === "COMPLETED"
+            ? `"${up.filename}" foi processado e os NCMs foram extraídos`
+            : `"${up.filename}" falhou: ${up.error_message ?? "erro desconhecido"}`,
+        timestamp: up.processed_at,
+        href: "/uploads",
+      });
+    }
+
+    // 5. NCMs sem dados tributários (aguardam varredura Econet)
+    const pendingNcmRow = await rawGet(
+      `SELECT COUNT(*) as total, MAX(created_at) as latest FROM ncm_items WHERE econet_status = 'PENDING'`
+    );
+    const pendingNcmTotal = Number(pendingNcmRow?.total ?? 0);
+    if (pendingNcmTotal > 0) {
+      notifications.push({
+        id: `ncm_pending_scan_${pendingNcmTotal}`,
+        type: "ncm_pending_scan",
+        title: "NCMs aguardam varredura",
+        message: `${pendingNcmTotal} NCM(s) ainda não têm dados tributários da Econet`,
+        timestamp: pendingNcmRow!.latest,
         href: "/ncm-analysis",
       });
     }

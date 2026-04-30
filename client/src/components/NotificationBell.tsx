@@ -1,14 +1,14 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Bell, CheckCheck, ScanSearch, GitCompareArrows, ClipboardCheck } from "lucide-react";
+import { Bell, CheckCheck, ScanSearch, GitCompareArrows, ClipboardCheck, FileCheck, FileX, Clock } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { distanceUTC } from "@/lib/dateUtils";
 
 interface Notification {
   id: string;
-  type: "scan_completed" | "ncm_changes" | "scan_request_update";
+  type: "scan_completed" | "ncm_changes" | "scan_request_update" | "upload_processed" | "ncm_pending_scan";
   title: string;
   message: string;
   timestamp: string;
@@ -32,10 +32,13 @@ function saveDismissed(ids: Set<string>) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
 }
 
+
 const typeIcon: Record<Notification["type"], React.ReactNode> = {
-  scan_completed: <ScanSearch className="h-4 w-4 text-green-500" />,
-  ncm_changes: <GitCompareArrows className="h-4 w-4 text-amber-500" />,
+  scan_completed:      <ScanSearch className="h-4 w-4 text-green-500" />,
+  ncm_changes:         <GitCompareArrows className="h-4 w-4 text-amber-500" />,
   scan_request_update: <ClipboardCheck className="h-4 w-4 text-blue-500" />,
+  upload_processed:    <FileCheck className="h-4 w-4 text-green-600" />,
+  ncm_pending_scan:    <Clock className="h-4 w-4 text-orange-500" />,
 };
 
 export function NotificationBell() {
@@ -117,7 +120,13 @@ export function NotificationBell() {
                 onClick={() => handleClick(n)}
                 className="w-full flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left border-b last:border-b-0"
               >
-                <div className="mt-0.5 shrink-0">{typeIcon[n.type]}</div>
+                <div className="mt-0.5 shrink-0">
+                  {n.type === "upload_processed" && n.title.includes("Erro") ? (
+                    <FileX className="h-4 w-4 text-red-500" />
+                  ) : (
+                    typeIcon[n.type]
+                  )}
+                </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{n.title}</p>
                   <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
