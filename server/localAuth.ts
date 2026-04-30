@@ -11,7 +11,7 @@ import MemoryStore from "memorystore";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import type { Express, RequestHandler } from "express";
-import { rawGet, rawRun } from "./rawDb.js";
+import { rawGet, rawAll, rawRun } from "./rawDb.js";
 
 const MemStore = MemoryStore(session);
 
@@ -86,6 +86,31 @@ export async function seedUsers() {
         console.log(`[localAuth] Usuário "${u.id}" já existe com senha.`);
       }
     }
+  }
+}
+
+// ─── Permissões padrão dos usuários seed ────────────────────────────────────
+
+const SEED_PERMISSIONS: Record<string, string[]> = {
+  [SEED_USER_IDS.thayssa]:      ["aprovar_etapa1", "aceitar_mudancas", "exportar"],
+  [SEED_USER_IDS.yuri]:         ["aprovar_etapa2", "aceitar_mudancas", "exportar"],
+  [SEED_USER_IDS.adminInminds]: ["aprovar_etapa1", "aprovar_etapa2", "aceitar_mudancas", "exportar"],
+};
+
+export async function seedPermissions() {
+  for (const [userId, perms] of Object.entries(SEED_PERMISSIONS)) {
+    const existing = await rawAll(
+      "SELECT permission FROM user_permissions WHERE user_id = ?",
+      [userId]
+    ) as { permission: string }[];
+    if (existing.length > 0) continue; // já configurado pelo admin — não sobrescreve
+    for (const perm of perms) {
+      await rawRun(
+        "INSERT OR IGNORE INTO user_permissions (user_id, permission, granted_by) VALUES (?, ?, ?)",
+        [userId, perm, SEED_USER_IDS.adminInminds]
+      );
+    }
+    console.log(`[localAuth] Permissões padrão aplicadas para "${userId}"`);
   }
 }
 

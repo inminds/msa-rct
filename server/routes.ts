@@ -2,7 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { isAuthenticated } from "./replitAuth";
-import { isAdmin, SEED_USER_IDS } from "./localAuth";
+import { isAdmin } from "./localAuth";
+import { hasPermission, getUserPermissions, setUserPermissions, PERMISSIONS, ALL_PERMISSIONS, PERMISSION_LABELS } from "./permissions.js";
 import { FileProcessor } from "./services/fileProcessor";
 import { TaxCalculator } from "./services/taxCalculator";
 import multer from "multer";
@@ -542,6 +543,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const id = randomUUID();
     const userId = (req.user as any)?.id ?? (req.user as any)?.claims?.sub ?? "unknown";
+    if (!await hasPermission(userId, PERMISSIONS.EXPORTAR)) return res.status(403).json({ message: "Sem permissão para exportar relatórios" });
 
     await rawRun(
       "INSERT INTO reports (id, name, type, format, status, created_by) VALUES (?, ?, ?, ?, 'pending', ?)",
@@ -602,6 +604,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // GET /api/reports/:id/download
   app.get("/api/reports/:id/download", isAuthenticated, async (req: any, res) => {
+    const dlUserId = (req.user as any)?.id ?? (req.user as any)?.claims?.sub ?? "unknown";
+    if (!await hasPermission(dlUserId, PERMISSIONS.EXPORTAR)) return res.status(403).json({ message: "Sem permissão para exportar relatórios" });
     const report = await rawGet("SELECT * FROM reports WHERE id=?", [req.params.id]) as any;
     if (!report || report.status !== "completed" || !report.file_path) {
       return res.status(404).json({ message: "Arquivo não disponível" });
@@ -1589,6 +1593,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Permission management endpoints (admin only)
+
+  // GET /api/permissions — lista todas as permissões disponíveis
+  app.get("/api/permissions", isAuthenticated, (_req, res) => {
+    res.json(
+      Object.entries(PERMISSION_LABELS).map(([key, val]) => ({
+        key,
+        label: val.label,
+        description: val.description,
+      }))
+    );
+  });
+
+  // GET /api/users/:id/permissions — permissões de um usuário
+  app.get("/api/users/:id/permissions", isAdmin, async (req, res) => {
+    try {
+      const perms = await getUserPermissions(req.params.id as any);
+      res.json(perms);
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao buscar permissões" });
+    }
+  });
+
+  // PUT /api/users/:id/permissions — define as permissões de um usuário
+  app.put("/api/users/:id/permissions", isAdmin, async (req: any, res) => {
+    try {
+      const { permissions } = req.body as { permissions: string[] };
+      if (!Array.isArray(permissions)) return res.status(400).json({ message: "permissions deve ser um array" });
+      const { id: adminId, name: adminName } = getUserInfo(req);
+      await setUserPermissions(req.params.id, permissions as any[], adminId);
+      logAudit(adminId, adminName, "USER_PERMISSIONS_UPDATED", "user", {
+        targetId: req.params.id,
+        permissions,
+      });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao atualizar permissões" });
+    }
+  });
+
+  // GET /api/me/permissions — permissões do usuário logado (para o frontend decidir o que mostrar)
+  app.get("/api/me/permissions", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const perms = await getUserPermissions(userId);
+      res.json(perms);
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao buscar permissões" });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Schedule endpoints
   app.get("/api/ncm-scan/schedule", isAuthenticated, async (_req, res) => {
     try {
@@ -1692,14 +1748,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const effectiveMode = isSeletivo ? "selecionados" : mode!;
       const userId = (req.user as any).id;
       const active = await rawGet(
-        "SELECT id FROM scan_requests WHERE requested_by = ? AND status IN ('pending_thayssa','pending_yuri')",
+        "SELECT id FROM scan_requests WHERE requested_by = ? AND status IN ('pending_step1','pending_step2')",
         [userId]
       );
       if (active) { return res.status(409).json({ message: "Você já tem uma solicitação ativa." }); }
       const now = new Date().toISOString();
       const ncmsJson = isSeletivo ? JSON.stringify(ncms) : null;
       const result = await rawRun(
-        "INSERT INTO scan_requests (requested_by, mode, ncms, status, created_at, updated_at) VALUES (?, ?, ?, 'pending_thayssa', ?, ?)",
+        "INSERT INTO scan_requests (requested_by, mode, ncms, status, created_at, updated_at) VALUES (?, ?, ?, 'pending_step1', ?, ?)",
         [userId, effectiveMode, ncmsJson, now, now]
       );
       const { id: srUserId, name: srUserName } = getUserInfo(req);
@@ -1708,7 +1764,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ncms: isSeletivo ? ncms : null,
         requestId: result.lastInsertRowid,
       });
-      res.status(201).json({ id: result.lastInsertRowid, status: "pending_thayssa" });
+      res.status(201).json({ id: result.lastInsertRowid, status: "pending_step1" });
     } catch (error) {
       console.error("Error creating scan request:", error);
       res.status(500).json({ message: "Erro ao criar solicitação" });
@@ -1736,19 +1792,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // GET /api/scan-requests/pending — pedidos pendentes para o admin logado
-  app.get("/api/scan-requests/pending", isAdmin, async (req: any, res) => {
+  // GET /api/scan-requests/pending — pedidos pendentes para o usuário logado (baseado em permissões)
+  app.get("/api/scan-requests/pending", isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).id;
-      let statusFilter: string;
-      if (userId === SEED_USER_IDS.thayssa) statusFilter = "pending_thayssa";
-      else if (userId === SEED_USER_IDS.yuri) statusFilter = "pending_yuri";
-      else return res.json([]);
+      const canStep1 = await hasPermission(userId, PERMISSIONS.APROVAR_ETAPA1);
+      const canStep2 = await hasPermission(userId, PERMISSIONS.APROVAR_ETAPA2);
+      if (!canStep1 && !canStep2) return res.json([]);
+
+      const statuses: string[] = [];
+      if (canStep1) statuses.push("pending_step1");
+      if (canStep2) statuses.push("pending_step2");
+
+      const placeholders = statuses.map(() => "?").join(",");
       const rows = await rawAll(
         `SELECT sr.*, u.first_name, u.last_name FROM scan_requests sr
          LEFT JOIN users u ON sr.requested_by = u.id
-         WHERE sr.status = ? ORDER BY sr.created_at ASC`,
-        [statusFilter]
+         WHERE sr.status IN (${placeholders}) ORDER BY sr.created_at ASC`,
+        statuses
       ) as any[];
       res.json(rows.map(r => ({
         id: r.id,
@@ -1764,8 +1825,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // POST /api/scan-requests/:id/approve — aprovar (thayssa ou yuri dependendo do status)
-  app.post("/api/scan-requests/:id/approve", isAdmin, async (req: any, res) => {
+  // POST /api/scan-requests/:id/approve — aprovar (baseado em permissões)
+  app.post("/api/scan-requests/:id/approve", isAuthenticated, async (req: any, res) => {
     if (process.env.NODE_ENV === 'production') return res.status(503).json({ message: 'Não disponível em produção' });
     try {
       const userId = (req.user as any).id;
@@ -1773,20 +1834,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const row = await rawGet("SELECT * FROM scan_requests WHERE id = ?", [requestId]) as any;
       if (!row) { return res.status(404).json({ message: "Solicitação não encontrada" }); }
       const now = new Date().toISOString();
-      if (row.status === "pending_thayssa") {
-        if (userId !== SEED_USER_IDS.thayssa) { return res.status(403).json({ message: "Somente a Thayssa pode aprovar nesta etapa" }); }
-        await rawRun("UPDATE scan_requests SET status='pending_yuri', updated_at=? WHERE id=?", [now, requestId]);
+      if (row.status === "pending_step1") {
+        if (!await hasPermission(userId, PERMISSIONS.APROVAR_ETAPA1)) { return res.status(403).json({ message: "Você não tem permissão para aprovar nesta etapa" }); }
+        await rawRun("UPDATE scan_requests SET status='pending_step2', updated_at=? WHERE id=?", [now, requestId]);
         const { id: apUserId, name: apUserName } = getUserInfo(req);
-        logAudit(apUserId, apUserName, "SCAN_APPROVED_THAYSSA", "scan", {
+        logAudit(apUserId, apUserName, "SCAN_APPROVED_STEP1", "scan", {
           requestId,
           requestedBy: row.requested_by,
           mode: row.mode,
-          nextStep: "Aguardando aprovação do Yuri",
+          nextStep: "Aguardando aprovação — Etapa 2",
         });
-        return res.json({ success: true, newStatus: "pending_yuri" });
+        return res.json({ success: true, newStatus: "pending_step2" });
       }
-      if (row.status === "pending_yuri") {
-        if (userId !== SEED_USER_IDS.yuri) { return res.status(403).json({ message: "Somente o Yuri pode aprovar nesta etapa" }); }
+      if (row.status === "pending_step2") {
+        if (!await hasPermission(userId, PERMISSIONS.APROVAR_ETAPA2)) { return res.status(403).json({ message: "Você não tem permissão para aprovar nesta etapa" }); }
         const activePid = getActivePid();
         if (activePid !== null) {
           try { process.kill(activePid, 0); return res.status(409).json({ message: "Já há uma varredura em andamento. Tente novamente em instantes." }); }
@@ -1842,16 +1903,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/scan-requests/:id/reject — rejeitar
-  app.post("/api/scan-requests/:id/reject", isAdmin, async (req: any, res) => {
+  app.post("/api/scan-requests/:id/reject", isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).id;
       const requestId = req.params.id;
       const { note } = req.body as { note?: string };
       const row = await rawGet("SELECT * FROM scan_requests WHERE id = ?", [requestId]) as any;
       if (!row) { return res.status(404).json({ message: "Solicitação não encontrada" }); }
-      if (row.status === "pending_thayssa" && userId !== SEED_USER_IDS.thayssa) { return res.status(403).json({ message: "Somente a Thayssa pode rejeitar nesta etapa" }); }
-      if (row.status === "pending_yuri" && userId !== SEED_USER_IDS.yuri) { return res.status(403).json({ message: "Somente o Yuri pode rejeitar nesta etapa" }); }
-      if (!["pending_thayssa", "pending_yuri"].includes(row.status)) { return res.status(400).json({ message: "Solicitação não está em estado rejeitável" }); }
+      if (row.status === "pending_step1" && !await hasPermission(userId, PERMISSIONS.APROVAR_ETAPA1)) { return res.status(403).json({ message: "Você não tem permissão para rejeitar nesta etapa" }); }
+      if (row.status === "pending_step2" && !await hasPermission(userId, PERMISSIONS.APROVAR_ETAPA2)) { return res.status(403).json({ message: "Você não tem permissão para rejeitar nesta etapa" }); }
+      if (!["pending_step1", "pending_step2"].includes(row.status)) { return res.status(400).json({ message: "Solicitação não está em estado rejeitável" }); }
       const now = new Date().toISOString();
       await rawRun(
         "UPDATE scan_requests SET status='rejected', rejected_by=?, rejection_note=?, updated_at=? WHERE id=?",
@@ -1902,7 +1963,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/ncm-changes/accept-all — aceita todas as pendentes
-  app.post("/api/ncm-changes/accept-all", isAdmin, async (req: any, res) => {
+  app.post("/api/ncm-changes/accept-all", isAuthenticated, async (req: any, res) => {
+    const userId = (req.user as any).id;
+    if (!await hasPermission(userId, PERMISSIONS.ACEITAR_MUDANCAS)) return res.status(403).json({ message: "Sem permissão para aceitar mudanças" });
     try {
       const now = new Date().toISOString();
       const result = await rawRun(
@@ -1920,7 +1983,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/ncm-changes/:id/accept
-  app.post("/api/ncm-changes/:id/accept", isAdmin, async (req: any, res) => {
+  app.post("/api/ncm-changes/:id/accept", isAuthenticated, async (req: any, res) => {
+    const userId0 = (req.user as any).id;
+    if (!await hasPermission(userId0, PERMISSIONS.ACEITAR_MUDANCAS)) return res.status(403).json({ message: "Sem permissão para aceitar mudanças" });
     try {
       const now = new Date().toISOString();
       const row = await rawGet("SELECT * FROM ncm_changes WHERE id = ?", [req.params.id]) as any;
@@ -1941,7 +2006,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/ncm-changes/:id/reject — rejeita e restaura valor antigo no Excel
-  app.post("/api/ncm-changes/:id/reject", isAdmin, async (req: any, res) => {
+  app.post("/api/ncm-changes/:id/reject", isAuthenticated, async (req: any, res) => {
+    const userId1 = (req.user as any).id;
+    if (!await hasPermission(userId1, PERMISSIONS.ACEITAR_MUDANCAS)) return res.status(403).json({ message: "Sem permissão para rejeitar mudanças" });
     try {
       const now = new Date().toISOString();
       const row = await rawGet("SELECT * FROM ncm_changes WHERE id = ?", [req.params.id]) as any;

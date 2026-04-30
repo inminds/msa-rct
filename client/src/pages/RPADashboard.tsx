@@ -47,8 +47,15 @@ export default function RPADashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: currentUser } = useQuery<any>({ queryKey: ["/api/auth/user"] });
-  const isAdmin = currentUser?.role === "ADMIN";
+  const { data: myPermissions = [] } = useQuery<string[]>({
+    queryKey: ["/api/me/permissions"],
+    queryFn: async () => {
+      const res = await fetch("/api/me/permissions", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const canManageChanges = myPermissions.includes("aceitar_mudancas");
 
   const { data: changes = [], isLoading } = useQuery<NCMChange[]>({
     queryKey: ["/api/ncm-changes", statusFilter],
@@ -192,7 +199,7 @@ export default function RPADashboard() {
                     </SelectContent>
                   </Select>
                 </div>
-                {isAdmin && pending > 0 && (
+                {canManageChanges && pending > 0 && (
                   <Button
                     className="bg-green-600 hover:bg-green-700 text-white"
                     onClick={() => setAcceptAllOpen(true)}
@@ -246,7 +253,7 @@ export default function RPADashboard() {
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Valor Novo</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Detectado em</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        {isAdmin && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>}
+                        {canManageChanges && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>}
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-100">
@@ -273,7 +280,7 @@ export default function RPADashboard() {
                           <td className="px-4 py-3 whitespace-nowrap">
                             <StatusBadge status={change.status} />
                           </td>
-                          {isAdmin && (
+                          {canManageChanges && (
                             <td className="px-4 py-3 whitespace-nowrap">
                               {change.status === "pending" ? (
                                 <div className="flex gap-2">

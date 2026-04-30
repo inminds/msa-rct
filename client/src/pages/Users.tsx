@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Users as UsersIcon, UserPlus, Edit, Shield, Mail, Search, Trash2, ShieldAlert } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Users as UsersIcon, UserPlus, Edit, Shield, Mail, Search, Trash2, ShieldAlert, KeyRound, Loader2 } from "lucide-react";
 import { UserModal } from "@/components/UserModal";
 import { useToast } from "@/hooks/use-toast";
 
@@ -22,12 +24,122 @@ interface User {
   createdAt: string;
 }
 
+interface PermissionDef {
+  key: string;
+  label: string;
+  description: string;
+}
+
+function PermissionsModal({
+  user,
+  onClose,
+}: {
+  user: User;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: allPermissions = [] } = useQuery<PermissionDef[]>({
+    queryKey: ["/api/permissions"],
+  });
+
+  const { data: userPerms = [], isLoading } = useQuery<string[]>({
+    queryKey: [`/api/users/${user.id}/permissions`],
+    queryFn: async () => {
+      const res = await fetch(`/api/users/${user.id}/permissions`, { credentials: "include" });
+      if (!res.ok) throw new Error("Erro ao buscar permissões");
+      return res.json();
+    },
+  });
+
+  const [selected, setSelected] = useState<string[] | null>(null);
+  const effective = selected ?? userPerms;
+
+  const saveMutation = useMutation({
+    mutationFn: async (permissions: string[]) => {
+      const res = await fetch(`/api/users/${user.id}/permissions`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ permissions }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.message); }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/users/${user.id}/permissions`] });
+      toast({ title: "Permissões atualizadas." });
+      onClose();
+    },
+    onError: (e: any) => {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    },
+  });
+
+  function toggle(key: string) {
+    setSelected((prev) => {
+      const base = prev ?? userPerms;
+      return base.includes(key) ? base.filter((k) => k !== key) : [...base, key];
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound className="w-5 h-5 text-blue-600" />
+            Permissões — {user.firstName} {user.lastName}
+          </DialogTitle>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+          </div>
+        ) : (
+          <div className="space-y-3 py-2">
+            {allPermissions.map((perm) => (
+              <label
+                key={perm.key}
+                className="flex items-start gap-3 p-3 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors"
+              >
+                <Checkbox
+                  checked={effective.includes(perm.key)}
+                  onCheckedChange={() => toggle(perm.key)}
+                  className="mt-0.5"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{perm.label}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{perm.description}</p>
+                </div>
+              </label>
+            ))}
+          </div>
+        )}
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button
+            onClick={() => saveMutation.mutate(effective)}
+            disabled={saveMutation.isPending || isLoading}
+          >
+            {saveMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Salvar permissões
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function UsersPage() {
   const [searchTerm, setSearchTerm] = useSessionFilter("users-search", "");
   const [roleFilter, setRoleFilter] = useSessionFilter("users-role", "");
   const [modalOpen, setModalOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  const [permissionsUser, setPermissionsUser] = useState<User | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -68,7 +180,6 @@ export default function UsersPage() {
     return matchSearch && matchRole;
   });
 
-  // Tela de acesso negado para usuários não-admin
   if (!isLoading && !isAdmin) {
     return (
       <div className="min-h-screen flex bg-gray-50">
@@ -197,6 +308,14 @@ export default function UsersPage() {
                           <td className="px-6 py-4 whitespace-nowrap">{getRoleBadge(user.role)}</td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Gerenciar permissões"
+                                onClick={() => setPermissionsUser(user)}
+                              >
+                                <KeyRound className="w-4 h-4 text-blue-500" />
+                              </Button>
                               <Button variant="ghost" size="sm" onClick={() => { setEditUser(user); setModalOpen(true); }}>
                                 <Edit className="w-4 h-4" />
                               </Button>
@@ -230,6 +349,13 @@ export default function UsersPage() {
         onClose={() => { setModalOpen(false); setEditUser(null); }}
         editUser={editUser}
       />
+
+      {permissionsUser && (
+        <PermissionsModal
+          user={permissionsUser}
+          onClose={() => setPermissionsUser(null)}
+        />
+      )}
 
       <AlertDialog open={!!deleteTarget} onOpenChange={v => !v && setDeleteTarget(null)}>
         <AlertDialogContent>

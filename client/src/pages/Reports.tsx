@@ -28,6 +28,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Lock,
 } from "lucide-react";
 
 const PAGE_SIZE_OPTIONS = [
@@ -138,6 +139,15 @@ export default function Reports() {
   const { data: stats } = useQuery({
     queryKey: ["/api/dashboard/stats"],
   });
+
+  const { data: myPermissions = [] } = useQuery<string[]>({
+    queryKey: ["/api/me/permissions"],
+    queryFn: async () => {
+      const res = await fetch("/api/me/permissions", { credentials: "include" });
+      return res.ok ? res.json() : [];
+    },
+  });
+  const canExport = myPermissions.includes("exportar");
 
   const generateMutation = useMutation({
     mutationFn: async ({ type, format, name }: { type: ReportType; format: ReportFormat; name: string }) => {
@@ -264,6 +274,12 @@ export default function Reports() {
           <Card>
             <CardHeader><CardTitle>Modelos de Relatório</CardTitle></CardHeader>
             <CardContent>
+              {!canExport && (
+                <div className="flex items-center gap-2 mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 text-sm">
+                  <Lock className="w-4 h-4 shrink-0" />
+                  Você não tem permissão para exportar relatórios. Solicite ao administrador.
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {REPORT_TEMPLATES.map(t => (
                   <div
@@ -283,7 +299,8 @@ export default function Reports() {
                         <div className="flex space-x-2">
                           <Button
                             size="sm"
-                            disabled={t.disabled || !!generatingId}
+                            disabled={t.disabled || !!generatingId || !canExport}
+                            title={!canExport ? "Sem permissão para exportar" : undefined}
                             onClick={() => setGenerateModal({ type: t.id, name: t.name })}
                           >
                             <FileText className="w-4 h-4 mr-2" />
@@ -402,7 +419,7 @@ export default function Reports() {
                               <Button variant="ghost" size="sm" onClick={() => handlePreview(report)} title="Visualizar">
                                 <Eye className="w-4 h-4" />
                               </Button>
-                              {report.status === "completed" && (
+                              {report.status === "completed" && canExport && (
                                 <Button variant="ghost" size="sm" onClick={() => handleDownload(report)} title="Baixar">
                                   <Download className="w-4 h-4" />
                                 </Button>

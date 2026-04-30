@@ -64,7 +64,7 @@ interface ScanRequest {
   requestedBy: string;
   requestedByName?: string;
   mode: "incompletos" | "todos";
-  status: "pending_thayssa" | "pending_yuri" | "approved" | "rejected";
+  status: "pending_step1" | "pending_step2" | "approved" | "rejected";
   rejectedBy?: string;
   rejectionNote?: string;
   createdAt: string;
@@ -124,22 +124,22 @@ function RequestStatusCard({
   onNewRequest: () => void;
   onDismiss: () => void;
 }) {
-  if (request.status === "pending_thayssa") {
+  if (request.status === "pending_step1") {
     return (
       <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-yellow-800">
         <Clock className="w-4 h-4 shrink-0" />
-        <span className="text-sm font-medium flex-1">Aguardando aprovação da <strong>Thayssa</strong> — solicitação de varredura enviada.</span>
+        <span className="text-sm font-medium flex-1">Aguardando aprovação — <strong>Etapa 1</strong>. Solicitação de varredura enviada.</span>
         <button onClick={onDismiss} className="text-yellow-500 hover:text-yellow-700 transition-colors">
           <X className="w-4 h-4" />
         </button>
       </div>
     );
   }
-  if (request.status === "pending_yuri") {
+  if (request.status === "pending_step2") {
     return (
       <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-orange-800">
         <Clock className="w-4 h-4 shrink-0" />
-        <span className="text-sm font-medium flex-1">Thayssa aprovou. Aguardando aprovação do <strong>Yuri</strong>.</span>
+        <span className="text-sm font-medium flex-1">Etapa 1 aprovada. Aguardando aprovação — <strong>Etapa 2</strong>.</span>
         <button onClick={onDismiss} className="text-orange-500 hover:text-orange-700 transition-colors">
           <X className="w-4 h-4" />
         </button>
@@ -222,6 +222,19 @@ export default function NCMAnalysis() {
     refetchInterval: 60_000,
   });
   const isAdmin = currentUser?.role === "ADMIN";
+
+  const { data: myPermissions = [] } = useQuery<string[]>({
+    queryKey: ["/api/me/permissions"],
+    queryFn: async () => {
+      const res = await fetch("/api/me/permissions", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!currentUser && !isAdmin,
+  });
+  const canApproveStep1 = isAdmin || myPermissions.includes("aprovar_etapa1");
+  const canApproveStep2 = isAdmin || myPermissions.includes("aprovar_etapa2");
+  const canApprove = canApproveStep1 || canApproveStep2;
 
   const { data: ncmRows, isLoading, refetch } = useQuery<NCMRow[]>({
     queryKey: ["/api/ncm-excel"],
@@ -478,7 +491,7 @@ export default function NCMAnalysis() {
 
   // ── Derived state ────────────────────────────────────────────────────────
 
-  const hasActiveRequest = !isAdmin && (myRequest?.status === "pending_thayssa" || myRequest?.status === "pending_yuri");
+  const hasActiveRequest = !isAdmin && (myRequest?.status === "pending_step1" || myRequest?.status === "pending_step2");
 
   const normalize = (s: string) =>
     s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -590,8 +603,8 @@ export default function NCMAnalysis() {
           </div>
         )}
 
-        {/* Card de status do pedido (apenas USER) */}
-        {!isAdmin && myRequest && !requestDismissed && (
+        {/* Card de status do pedido (apenas quem não pode aprovar) */}
+        {!canApprove && myRequest && !requestDismissed && (
           <RequestStatusCard
             request={myRequest}
             onNewRequest={() => {
@@ -604,8 +617,8 @@ export default function NCMAnalysis() {
 
         <div className="p-6 space-y-6">
 
-          {/* Painel de solicitações pendentes (apenas ADMIN quando há pendências) */}
-          {isAdmin && pendingRequests.length > 0 && (
+          {/* Painel de solicitações pendentes (quem tem permissão de aprovar) */}
+          {canApprove && pendingRequests.length > 0 && (
             <Card className="border-orange-200 bg-orange-50">
               <CardHeader className="pb-3">
                 <CardTitle className="text-orange-800 flex items-center gap-2 text-base">
