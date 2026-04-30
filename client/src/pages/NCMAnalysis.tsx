@@ -84,6 +84,8 @@ interface ScanHistoryEntry {
   triggeredBy: string;
   action: string;
   details: Record<string, any> | null;
+  changesDate: string | null;
+  changes: { ncm: string; field: string; oldValue: string; newValue: string; status: "pending" | "accepted" | "rejected" }[];
 }
 
 const SCAN_ACTION_LABELS: Record<string, string> = {
@@ -104,8 +106,8 @@ function entryToLastScan(entry: ScanHistoryEntry): LastScan {
     triggeredBy: entry.triggeredBy,
     action: entry.action,
     details: entry.details,
-    changesDate: null,
-    changes: [],
+    changesDate: entry.changesDate ?? null,
+    changes: entry.changes ?? [],
   };
 }
 

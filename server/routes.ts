@@ -1118,7 +1118,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     // 5. NCMs sem dados tributários (aguardam varredura Econet)
     const pendingNcmRow = await rawGet(
-      `SELECT COUNT(*) as total, MAX(created_at) as latest FROM ncm_items WHERE econet_status = 'PENDING'`
+      `SELECT COUNT(DISTINCT ncm_code) as total, MAX(created_at) as latest FROM ncm_items WHERE econet_status = 'PENDING'`
     );
     const pendingNcmTotal = Number(pendingNcmRow?.total ?? 0);
     if (pendingNcmTotal > 0) {
@@ -1346,13 +1346,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
          )
          ORDER BY created_at DESC LIMIT 50`
       ) as any[];
-      res.json(rows.map((r: any) => ({
-        id: r.id,
-        createdAt: r.created_at,
-        triggeredBy: r.user_name,
-        action: r.action,
-        details: r.details ? JSON.parse(r.details) : null,
-      })));
+
+      // Load all change batches to associate with scan entries
+      const allChanges = await rawAll("SELECT * FROM ncm_changes ORDER BY scan_date ASC, ncm ASC") as any[];
+      const changesByDate = new Map<string, any[]>();
+      for (const c of allChanges) {
+        if (!changesByDate.has(c.scan_date)) changesByDate.set(c.scan_date, []);
+        changesByDate.get(c.scan_date)!.push(c);
+      }
+      const scanDates = Array.from(changesByDate.keys()).sort();
+
+      // For each entry, find the first changes batch whose scan_date falls between
+      // this entry's created_at and the next non-cancelled entry's created_at.
+      const rowsAsc = [...rows].sort((a, b) => a.created_at < b.created_at ? -1 : 1);
+
+      const result = rows.map((r: any) => {
+        if (r.action === "SCAN_CANCELLED") {
+          return { id: r.id, createdAt: r.created_at, triggeredBy: r.user_name,
+            action: r.action, details: r.details ? JSON.parse(r.details) : null,
+            changesDate: null, changes: [] };
+        }
+        const nextEntry = rowsAsc.find(
+          (o) => o.created_at > r.created_at && o.action !== "SCAN_CANCELLED"
+        );
+        const matchingDate = scanDates.find(
+          (sd) => sd >= r.created_at && (!nextEntry || sd < nextEntry.created_at)
+        );
+        const changes = matchingDate
+          ? (changesByDate.get(matchingDate) ?? []).map((c: any) => ({
+              ncm: c.ncm, field: c.field,
+              oldValue: c.old_value, newValue: c.new_value, status: c.status,
+            }))
+          : [];
+        return {
+          id: r.id, createdAt: r.created_at, triggeredBy: r.user_name,
+          action: r.action, details: r.details ? JSON.parse(r.details) : null,
+          changesDate: matchingDate ?? null, changes,
+        };
+      });
+
+      res.json(result);
     } catch (error) {
       console.error("Error fetching scan history:", error);
       res.status(500).json({ message: "Erro ao buscar histórico de varreduras" });
@@ -1723,10 +1756,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const logDir2 = path.resolve(".data");
         if (!fs.existsSync(logDir2)) fs.mkdirSync(logDir2, { recursive: true });
         const logFd2 = fs.openSync(path.join(logDir2, "scraper.log"), "a");
+        // Snapshot before scan for change detection
+        let snapshot2: Record<string, string>[] = [];
+        try { snapshot2 = await readNCMsFromExcel(); } catch { /* ignore */ }
         const child = spawn(PYTHON, args, {
           cwd: path.resolve("."), env: { ...process.env, PYTHONUNBUFFERED: "1" }, detached: true, stdio: ["ignore", logFd2, logFd2],
         });
-        child.on("close", (code) => { try { fs.closeSync(logFd2); } catch {} console.log(`[scan-requests] scraper exited (code: ${code})`); });
+        child.on("close", async (code) => {
+          try { fs.closeSync(logFd2); } catch {}
+          console.log(`[scan-requests] scraper exited (code: ${code})`);
+          if (snapshot2.length > 0) {
+            try {
+              const after2 = await readNCMsFromExcel();
+              await detectAndSaveChanges(snapshot2, after2);
+            } catch (err) {
+              console.error("[scan-requests] Erro ao detectar mudanças após varredura:", err);
+            }
+          }
+        });
         child.unref();
         if (child.pid) setActivePid(child.pid);
         console.log(`[scan-requests] Yuri aprovou — scan iniciado (pid: ${child.pid}) mode: ${row.mode} — log: .data/scraper.log`);
