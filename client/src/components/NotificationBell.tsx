@@ -69,7 +69,7 @@ export function NotificationBell() {
   });
 
   // Notificações visíveis (não deletadas)
-  const visible = all.filter((n) => !deleted.has(n.id));
+  const visible = all.filter((n) => n.type !== "ncm_pending_scan" && !deleted.has(n.id));
 
   // Separa não lidas e lidas; lidas ordenadas pela mais recente no topo
   const unread  = visible.filter((n) => !read.has(n.id));

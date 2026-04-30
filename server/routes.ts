@@ -36,6 +36,42 @@ function isInternalRequest(req: any): boolean {
 
 // ── Audit logging helpers ────────────────────────────────────────────────────
 
+function parseAuditDetails(details: string | null) {
+  if (!details) return null;
+  try {
+    return JSON.parse(details);
+  } catch {
+    return null;
+  }
+}
+
+function toTime(value: string | null | undefined) {
+  if (!value) return Number.NaN;
+  const normalized = value.includes("T") ? value : value.replace(" ", "T") + "Z";
+  return new Date(normalized).getTime();
+}
+
+async function getScanNcms(details: any) {
+  if (Array.isArray(details?.ncms)) return details.ncms.map(String);
+  if (!details?.requestId) return [];
+
+  const request = await rawGet("SELECT ncms FROM scan_requests WHERE id = ?", [details.requestId]) as any;
+  if (!request?.ncms) return [];
+
+  try {
+    const parsed = JSON.parse(request.ncms);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function filterChangesForScan(changes: any[], scannedNcms: string[]) {
+  if (!scannedNcms.length) return changes;
+  const allowed = new Set(scannedNcms.map((ncm) => ncm.replace(/\D/g, "")));
+  return changes.filter((change) => allowed.has(String(change.ncm).replace(/\D/g, "")));
+}
+
 async function getUploadsWithDetails(limit = 50) {
   const safeLimit = Math.max(1, Math.min(limit, 500));
   const uploads = await rawAll(
@@ -1121,7 +1157,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       `SELECT COUNT(DISTINCT ncm_code) as total, MAX(created_at) as latest FROM ncm_items WHERE econet_status = 'PENDING'`
     );
     const pendingNcmTotal = Number(pendingNcmRow?.total ?? 0);
-    if (pendingNcmTotal > 0) {
+    if (pendingNcmTotal > 0 && req.query.includePendingScan === "true") {
       notifications.push({
         id: `ncm_pending_scan_${pendingNcmTotal}`,
         type: "ncm_pending_scan",
@@ -1308,20 +1344,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         [lastLog.created_at]
       ) as any;
 
+      const details = parseAuditDetails(lastLog.details);
+      const scannedNcms = await getScanNcms(details);
       let changes: any[] = [];
       if (latestBatch?.scan_date) {
         changes = await rawAll(
           "SELECT * FROM ncm_changes WHERE scan_date = ? ORDER BY ncm ASC",
           [latestBatch.scan_date]
         ) as any[];
+        changes = filterChangesForScan(changes, scannedNcms);
       }
 
       res.json({
         triggeredAt: lastLog.created_at,
         triggeredBy: lastLog.user_name,
         action: lastLog.action,
-        details: lastLog.details ? JSON.parse(lastLog.details) : null,
-        changesDate: latestBatch?.scan_date ?? null,
+        details: scannedNcms.length ? { ...details, ncms: scannedNcms } : details,
+        changesDate: changes.length ? latestBatch?.scan_date ?? null : null,
         changes: changes.map((c: any) => ({
           ncm: c.ncm, field: c.field,
           oldValue: c.old_value, newValue: c.new_value,
@@ -1360,30 +1399,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // this entry's created_at and the next non-cancelled entry's created_at.
       const rowsAsc = [...rows].sort((a, b) => a.created_at < b.created_at ? -1 : 1);
 
-      const result = rows.map((r: any) => {
+      const result = await Promise.all(rows.map(async (r: any) => {
+        const details = parseAuditDetails(r.details);
         if (r.action === "SCAN_CANCELLED") {
           return { id: r.id, createdAt: r.created_at, triggeredBy: r.user_name,
-            action: r.action, details: r.details ? JSON.parse(r.details) : null,
+            action: r.action, details,
             changesDate: null, changes: [] };
         }
+        const scannedNcms = await getScanNcms(details);
+        const currentTime = toTime(r.created_at);
         const nextEntry = rowsAsc.find(
-          (o) => o.created_at > r.created_at && o.action !== "SCAN_CANCELLED"
+          (o) => toTime(o.created_at) > currentTime && o.action !== "SCAN_CANCELLED"
         );
+        const nextTime = nextEntry ? toTime(nextEntry.created_at) : Number.POSITIVE_INFINITY;
         const matchingDate = scanDates.find(
-          (sd) => sd >= r.created_at && (!nextEntry || sd < nextEntry.created_at)
+          (sd) => {
+            const scanTime = toTime(sd);
+            return scanTime >= currentTime && scanTime < nextTime;
+          }
         );
-        const changes = matchingDate
-          ? (changesByDate.get(matchingDate) ?? []).map((c: any) => ({
+        const batchChanges = matchingDate
+          ? filterChangesForScan(changesByDate.get(matchingDate) ?? [], scannedNcms)
+          : [];
+        const changes = batchChanges.map((c: any) => ({
               ncm: c.ncm, field: c.field,
               oldValue: c.old_value, newValue: c.new_value, status: c.status,
-            }))
-          : [];
+            }));
         return {
           id: r.id, createdAt: r.created_at, triggeredBy: r.user_name,
-          action: r.action, details: r.details ? JSON.parse(r.details) : null,
-          changesDate: matchingDate ?? null, changes,
+          action: r.action, details: scannedNcms.length ? { ...details, ncms: scannedNcms } : details,
+          changesDate: batchChanges.length ? matchingDate : null, changes,
         };
-      });
+      }));
 
       res.json(result);
     } catch (error) {
@@ -1782,6 +1829,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           requestId,
           requestedBy: row.requested_by,
           mode: row.mode,
+          ncms: row.ncms ? JSON.parse(row.ncms) : undefined,
           pid: child.pid,
         });
         return res.json({ success: true, newStatus: "approved", pid: child.pid });

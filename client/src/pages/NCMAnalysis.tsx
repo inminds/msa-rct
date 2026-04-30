@@ -1166,7 +1166,7 @@ export default function NCMAnalysis() {
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">NCMs novos detectados no upload</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {(scanDetailData.details.newNcms as string[]).map((ncm) => (
+                    {((scanDetailData.details?.newNcms ?? []) as string[]).map((ncm) => (
                       <span key={ncm} className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">
                         {ncm}
                       </span>
