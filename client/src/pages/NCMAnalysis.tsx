@@ -236,6 +236,7 @@ export default function NCMAnalysis() {
   const canApproveStep1 = isAdmin || myPermissions.includes("aprovar_etapa1");
   const canApproveStep2 = isAdmin || myPermissions.includes("aprovar_etapa2");
   const canApprove = canApproveStep1 || canApproveStep2;
+  const canSchedule = isAdmin || myPermissions.includes("agendar");
 
   const { data: ncmRows, isLoading, refetch } = useQuery<NCMRow[]>({
     queryKey: ["/api/ncm-excel"],
@@ -868,8 +869,8 @@ export default function NCMAnalysis() {
                   Atualizar
                 </Button>
 
-                {/* Botão de agendamento (apenas ADMIN) */}
-                {isAdmin && (
+                {/* Botão de agendamento (admin ou quem tem permissão agendar) */}
+                {canSchedule && (
                   <Button
                     variant="outline"
                     className="text-purple-700 border-purple-300 hover:bg-purple-50"

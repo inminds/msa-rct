@@ -5,6 +5,7 @@ export const PERMISSIONS = {
   APROVAR_ETAPA2:   "aprovar_etapa2",
   ACEITAR_MUDANCAS: "aceitar_mudancas",
   EXPORTAR:         "exportar",
+  AGENDAR:          "agendar",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -16,6 +17,7 @@ export const PERMISSION_LABELS: Record<Permission, { label: string; description:
   aprovar_etapa2:   { label: "Aprovar varredura — Etapa 2", description: "Segunda aprovação — dispara a varredura efetivamente" },
   aceitar_mudancas: { label: "Aceitar/rejeitar mudanças de NCM", description: "Validar mudanças detectadas pelo RPA nas alíquotas" },
   exportar:         { label: "Exportar relatórios", description: "Gerar e baixar relatórios tributários" },
+  agendar:          { label: "Agendar varredura", description: "Configurar e ativar o agendamento automático de varreduras" },
 };
 
 export async function hasPermission(userId: string, permission: Permission): Promise<boolean> {

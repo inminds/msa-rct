@@ -92,9 +92,9 @@ export async function seedUsers() {
 // ─── Permissões padrão dos usuários seed ────────────────────────────────────
 
 const SEED_PERMISSIONS: Record<string, string[]> = {
-  [SEED_USER_IDS.thayssa]:      ["aprovar_etapa1", "aceitar_mudancas", "exportar"],
-  [SEED_USER_IDS.yuri]:         ["aprovar_etapa2", "aceitar_mudancas", "exportar"],
-  [SEED_USER_IDS.adminInminds]: ["aprovar_etapa1", "aprovar_etapa2", "aceitar_mudancas", "exportar"],
+  [SEED_USER_IDS.thayssa]:      ["aprovar_etapa1", "aceitar_mudancas", "exportar", "agendar"],
+  [SEED_USER_IDS.yuri]:         ["aprovar_etapa2", "aceitar_mudancas", "exportar", "agendar"],
+  [SEED_USER_IDS.adminInminds]: ["aprovar_etapa1", "aprovar_etapa2", "aceitar_mudancas", "exportar", "agendar"],
 };
 
 export async function seedPermissions() {

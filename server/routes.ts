@@ -1868,6 +1868,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/ncm-scan/schedule", isAuthenticated, async (req: any, res) => {
+    const schedUserId = (req.user as any).id;
+    const isAdminUser = (req.user as any).role === "ADMIN";
+    if (!isAdminUser && !await hasPermission(schedUserId, PERMISSIONS.AGENDAR))
+      return res.status(403).json({ message: "Sem permissão para configurar agendamento" });
     try {
       const { enabled, frequency, dayOfWeek, dayOfMonth, hour, minute, mode } = req.body;
       const now = new Date();
@@ -1920,6 +1924,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.delete("/api/ncm-scan/schedule", isAuthenticated, async (req: any, res) => {
+    const delSchedUserId = (req.user as any).id;
+    const isAdminDelSched = (req.user as any).role === "ADMIN";
+    if (!isAdminDelSched && !await hasPermission(delSchedUserId, PERMISSIONS.AGENDAR))
+      return res.status(403).json({ message: "Sem permissão para cancelar agendamento" });
     try {
       await db.insert(scanSchedule).values({
         id: 1, enabled: 0, frequency: "weekly", dayOfWeek: 1, dayOfMonth: 1, hour: 8, minute: 0, mode: "incompletos", updatedAt: new Date(),
