@@ -1055,7 +1055,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const { id: userId } = getUserInfo(req);
     const notifications: {
       id: string;
-      type: "scan_completed" | "ncm_changes" | "scan_request_update" | "upload_processed" | "ncm_pending_scan" | "scan_running" | "scan_scheduled" | "scan_request_pending";
+      type: "scan_completed" | "ncm_changes" | "scan_request_update" | "upload_processed" | "ncm_pending_scan" | "scan_running" | "scan_scheduled" | "scan_request_pending" | "schedule_configured" | "ncm_change_resolved";
       title: string;
       message: string;
       timestamp: string;
@@ -1240,6 +1240,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
         title: "NCMs aguardam varredura",
         message: `${pendingNcmTotal} NCM(s) ainda não têm dados tributários da Econet`,
         timestamp: pendingNcmRow!.latest,
+        href: "/ncm-analysis",
+      });
+    }
+
+    // 6. Nova configuração de agendamento (todos os usuários — últimos 7 dias)
+    const lastScheduleLog = await rawGet(
+      `SELECT user_name, details, created_at FROM audit_logs
+       WHERE action IN ('SCHEDULE_CONFIGURED', 'SCHEDULE_CANCELLED')
+       ORDER BY created_at DESC LIMIT 1`
+    ) as any;
+    if (lastScheduleLog) {
+      let details: any = {};
+      try { details = JSON.parse(lastScheduleLog.details ?? "{}"); } catch {}
+      const isCancelled = !details.enabled;
+      const freqLabel: Record<string, string> = { daily: "diária", weekly: "semanal", monthly: "mensal" };
+      const dayNames = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const message = isCancelled
+        ? `Agendamento desativado por ${lastScheduleLog.user_name}`
+        : (() => {
+            const freq = freqLabel[details.frequency] ?? details.frequency;
+            const time = `${pad(details.hour ?? 8)}:${pad(details.minute ?? 0)}`;
+            const day = details.frequency === "weekly"
+              ? `toda ${dayNames[details.dayOfWeek ?? 1]}`
+              : details.frequency === "monthly"
+              ? `todo dia ${details.dayOfMonth ?? 1}`
+              : "todo dia";
+            return `${freq.charAt(0).toUpperCase() + freq.slice(1)} — ${day} às ${time}, por ${lastScheduleLog.user_name}`;
+          })();
+      notifications.push({
+        id: `schedule_configured_${lastScheduleLog.created_at}`,
+        type: "schedule_configured",
+        title: isCancelled ? "Agendamento desativado" : "Agendamento atualizado",
+        message,
+        timestamp: lastScheduleLog.created_at,
+        href: "/ncm-analysis",
+      });
+    }
+
+    // 7. Aceite ou rejeição de mudança de NCM (todos os usuários — últimas 48h)
+    const recentResolved = await rawAll(
+      `SELECT action, user_name, details, created_at FROM audit_logs
+       WHERE action IN ('NCM_CHANGE_ACCEPTED', 'NCM_CHANGE_REJECTED')
+         AND created_at >= datetime('now', '-48 hours')
+       ORDER BY created_at DESC LIMIT 5`
+    ) as any[];
+    for (const log of recentResolved ?? []) {
+      let det: any = {};
+      try { det = JSON.parse(log.details ?? "{}"); } catch {}
+      const isAccepted = log.action === "NCM_CHANGE_ACCEPTED";
+      notifications.push({
+        id: `ncm_change_resolved_${det.changeId ?? log.created_at}`,
+        type: "ncm_change_resolved",
+        title: isAccepted ? "Mudança de NCM aceita" : "Mudança de NCM rejeitada",
+        message: `NCM ${det.ncm ?? "?"} — campo "${det.field ?? "?"}" ${isAccepted ? "aceito" : "rejeitado"} por ${log.user_name}`,
+        timestamp: log.created_at,
         href: "/ncm-analysis",
       });
     }

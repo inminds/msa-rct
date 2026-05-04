@@ -1,14 +1,14 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Bell, Check, X, ScanSearch, GitCompareArrows, ClipboardCheck, FileCheck, FileX, Clock, Loader2, CalendarClock, ClipboardList } from "lucide-react";
+import { Bell, Check, X, ScanSearch, GitCompareArrows, ClipboardCheck, FileCheck, FileX, Clock, Loader2, CalendarClock, ClipboardList, CalendarCheck, ThumbsUp, ThumbsDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { distanceUTC } from "@/lib/dateUtils";
 
 interface Notification {
   id: string;
-  type: "scan_completed" | "ncm_changes" | "scan_request_update" | "upload_processed" | "ncm_pending_scan" | "scan_running" | "scan_scheduled" | "scan_request_pending";
+  type: "scan_completed" | "ncm_changes" | "scan_request_update" | "upload_processed" | "ncm_pending_scan" | "scan_running" | "scan_scheduled" | "scan_request_pending" | "schedule_configured" | "ncm_change_resolved";
   title: string;
   message: string;
   timestamp: string;
@@ -53,11 +53,17 @@ const typeIcon: Record<Notification["type"], React.ReactNode> = {
   scan_running:          <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />,
   scan_scheduled:        <CalendarClock className="h-4 w-4 text-purple-500" />,
   scan_request_pending:  <ClipboardList className="h-4 w-4 text-orange-500" />,
+  schedule_configured:   <CalendarCheck className="h-4 w-4 text-purple-500" />,
+  ncm_change_resolved:   <ThumbsUp className="h-4 w-4 text-green-500" />,
 };
 
 function notificationIcon(n: Notification) {
   if (n.type === "upload_processed" && n.title.includes("Erro"))
     return <FileX className="h-4 w-4 text-red-500" />;
+  if (n.type === "ncm_change_resolved" && n.title.includes("rejeitada"))
+    return <ThumbsDown className="h-4 w-4 text-red-400" />;
+  if (n.type === "schedule_configured" && n.title.includes("desativado"))
+    return <CalendarCheck className="h-4 w-4 text-gray-400" />;
   return typeIcon[n.type];
 }
 
