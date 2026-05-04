@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Bell, Check, X, ScanSearch, GitCompareArrows, ClipboardCheck, FileCheck, FileX, Clock, Loader2, CalendarClock, ClipboardList, CalendarCheck, ThumbsUp, ThumbsDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -14,34 +14,7 @@ interface Notification {
   timestamp: string;
   href: string;
   live?: boolean;
-}
-
-// read: { id → readAt (ms) }  — lidas mas ainda visíveis
-// deleted: id[]               — removidas definitivamente
-const STORAGE_READ_KEY    = "tributai_read_notifications";
-const STORAGE_DELETED_KEY = "tributai_deleted_notifications";
-
-function loadRead(): Map<string, number> {
-  try {
-    const raw = localStorage.getItem(STORAGE_READ_KEY);
-    return new Map(raw ? JSON.parse(raw) : []);
-  } catch { return new Map(); }
-}
-
-function saveRead(map: Map<string, number>) {
-  const arr = Array.from(map.entries()).slice(-200);
-  localStorage.setItem(STORAGE_READ_KEY, JSON.stringify(arr));
-}
-
-function loadDeleted(): Set<string> {
-  try {
-    const raw = localStorage.getItem(STORAGE_DELETED_KEY);
-    return new Set(raw ? JSON.parse(raw) : []);
-  } catch { return new Set(); }
-}
-
-function saveDeleted(set: Set<string>) {
-  localStorage.setItem(STORAGE_DELETED_KEY, JSON.stringify(Array.from(set).slice(-200)));
+  readAt?: string | null;
 }
 
 const typeIcon: Record<Notification["type"], React.ReactNode> = {
@@ -69,75 +42,77 @@ function notificationIcon(n: Notification) {
 
 export function NotificationBell() {
   const [, navigate] = useLocation();
-  const [read, setRead]       = useState<Map<string, number>>(loadRead);
-  const [deleted, setDeleted] = useState<Set<string>>(loadDeleted);
-  const [open, setOpen]       = useState(false);
+  const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data: all = [] } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
     refetchInterval: 30_000,
   });
 
-  // Notificações "ao vivo" — sempre visíveis no topo, sem controles de lida/deletar
+  // Mutations — atualização otimista via invalidação
+  const markReadMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, {
+        method: "POST", credentials: "include",
+      });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/notifications"] }),
+  });
+
+  const markAllReadMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await fetch("/api/notifications/read-all", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/notifications"] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/notifications/${encodeURIComponent(id)}`, {
+        method: "DELETE", credentials: "include",
+      });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/notifications"] }),
+  });
+
+  // Notificações "ao vivo" — sempre visíveis no topo, sem controles
   const liveNotifs = all.filter((n) => n.live);
 
-  // Notificações persistentes (não deletadas, não do tipo ncm_pending_scan legacy)
-  const visible = all.filter((n) => !n.live && n.type !== "ncm_pending_scan" && !deleted.has(n.id));
+  // Notificações persistentes (tipo ncm_pending_scan legacy ignorado)
+  const persistent = all.filter((n) => !n.live && n.type !== "ncm_pending_scan");
 
-  // Separa não lidas e lidas; lidas ordenadas pela mais recente no topo
-  const unread  = visible.filter((n) => !read.has(n.id));
-  const readList = visible
-    .filter((n) => read.has(n.id))
-    .sort((a, b) => (read.get(b.id) ?? 0) - (read.get(a.id) ?? 0));
+  const unread   = persistent.filter((n) => !n.readAt);
+  const readList = persistent
+    .filter((n) => !!n.readAt)
+    .sort((a, b) => new Date(b.readAt!).getTime() - new Date(a.readAt!).getTime());
 
   const unreadCount = unread.length + liveNotifs.length;
 
-  useEffect(() => { saveRead(read); },    [read]);
-  useEffect(() => { saveDeleted(deleted); }, [deleted]);
+  function handleClick(n: Notification) {
+    if (!n.readAt) markReadMutation.mutate(n.id);
+    setOpen(false);
+    navigate(n.href);
+  }
 
   function markRead(id: string, e: React.MouseEvent) {
     e.stopPropagation();
-    setRead((prev) => {
-      const next = new Map(prev);
-      next.set(id, Date.now());
-      return next;
-    });
-  }
-
-  function markAllRead() {
-    const now = Date.now();
-    setRead((prev) => {
-      const next = new Map(prev);
-      unread.forEach((n) => next.set(n.id, now));
-      return next;
-    });
+    markReadMutation.mutate(id);
   }
 
   function deleteOne(id: string, e: React.MouseEvent) {
     e.stopPropagation();
-    setDeleted((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-    setRead((prev) => {
-      const next = new Map(prev);
-      next.delete(id);
-      return next;
-    });
+    deleteMutation.mutate(id);
   }
 
-  function handleClick(n: Notification) {
-    // Clicar na notificação não lida: marca como lida e navega
-    if (!read.has(n.id)) {
-      setRead((prev) => {
-        const next = new Map(prev);
-        next.set(n.id, Date.now());
-        return next;
-      });
-    }
-    setOpen(false);
-    navigate(n.href);
+  function markAllRead() {
+    const ids = unread.map((n) => n.id);
+    if (ids.length > 0) markAllReadMutation.mutate(ids);
   }
 
   function NotificationRow({ n, isRead }: { n: Notification; isRead: boolean }) {
@@ -200,12 +175,13 @@ export function NotificationBell() {
       <PopoverContent align="end" className="w-80 p-0">
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <span className="text-sm font-semibold text-gray-900">Notificações</span>
-          {unreadCount > 0 && (
+          {unread.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
               className="h-auto py-0.5 px-2 text-xs text-gray-500 hover:text-gray-700"
               onClick={markAllRead}
+              disabled={markAllReadMutation.isPending}
             >
               <Check className="h-3 w-3 mr-1" />
               Marcar todas como lidas
@@ -214,7 +190,7 @@ export function NotificationBell() {
         </div>
 
         <div className="max-h-96 overflow-y-auto">
-          {liveNotifs.length === 0 && visible.length === 0 ? (
+          {liveNotifs.length === 0 && persistent.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-gray-400">
               <Bell className="h-8 w-8 mb-2 opacity-30" />
               <p className="text-sm">Nenhuma notificação</p>
@@ -244,7 +220,7 @@ export function NotificationBell() {
               )}
 
               {/* Notificações persistentes */}
-              {visible.length > 0 && (
+              {persistent.length > 0 && (
                 <>
                   {liveNotifs.length > 0 && (
                     <div className="px-4 py-1.5 bg-gray-50 border-b">

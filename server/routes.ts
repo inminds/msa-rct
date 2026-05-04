@@ -1300,7 +1300,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
 
-    res.json(notifications);
+    // Enrich with persisted state (read/deleted) from DB
+    const userId0 = (req.user as any).id;
+    const states = await rawAll(
+      `SELECT notification_id, read_at, deleted FROM notification_state WHERE user_id = ?`,
+      [userId0]
+    ) as any[];
+    const stateMap = new Map(states.map((s: any) => [s.notification_id, s]));
+
+    const enriched = notifications
+      .filter((n) => {
+        const s = stateMap.get(n.id);
+        return !s || !s.deleted;
+      })
+      .map((n) => {
+        const s = stateMap.get(n.id);
+        return { ...n, readAt: s?.read_at ?? null };
+      });
+
+    res.json(enriched);
+  });
+
+  // POST /api/notifications/:id/read — marca notificação como lida
+  app.post("/api/notifications/:id/read", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const notifId = req.params.id;
+      const now = new Date().toISOString();
+      await rawRun(
+        `INSERT INTO notification_state (user_id, notification_id, read_at, deleted)
+         VALUES (?, ?, ?, 0)
+         ON CONFLICT(user_id, notification_id) DO UPDATE SET read_at = excluded.read_at`,
+        [userId, notifId, now]
+      );
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ message: "Erro ao marcar como lida" });
+    }
+  });
+
+  // POST /api/notifications/read-all — marca todas as visíveis como lidas
+  app.post("/api/notifications/read-all", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const { ids } = req.body as { ids: string[] };
+      if (!Array.isArray(ids) || ids.length === 0) return res.json({ success: true });
+      const now = new Date().toISOString();
+      for (const id of ids) {
+        await rawRun(
+          `INSERT INTO notification_state (user_id, notification_id, read_at, deleted)
+           VALUES (?, ?, ?, 0)
+           ON CONFLICT(user_id, notification_id) DO UPDATE SET read_at = excluded.read_at`,
+          [userId, id, now]
+        );
+      }
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ message: "Erro ao marcar todas como lidas" });
+    }
+  });
+
+  // DELETE /api/notifications/:id — remove notificação para o usuário
+  app.delete("/api/notifications/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const notifId = req.params.id;
+      await rawRun(
+        `INSERT INTO notification_state (user_id, notification_id, read_at, deleted)
+         VALUES (?, ?, NULL, 1)
+         ON CONFLICT(user_id, notification_id) DO UPDATE SET deleted = 1`,
+        [userId, notifId]
+      );
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ message: "Erro ao remover notificação" });
+    }
   });
 
   // ─── NCM Scan endpoints (consumed by Python rpa_ncm_scanner) ─────────────

@@ -158,6 +158,14 @@ if (isDev) {
       PRIMARY KEY (user_id, permission),
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
+    CREATE TABLE IF NOT EXISTS notification_state (
+      user_id VARCHAR NOT NULL,
+      notification_id VARCHAR NOT NULL,
+      read_at TIMESTAMP,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, notification_id),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
   `);
 
   db = drizzleSqlite({ client: sqliteDb, schema });
@@ -271,6 +279,13 @@ if (isDev) {
       granted_by VARCHAR,
       granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (user_id, permission)
+    );
+    CREATE TABLE IF NOT EXISTS notification_state (
+      user_id VARCHAR NOT NULL,
+      notification_id VARCHAR NOT NULL,
+      read_at TIMESTAMP,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, notification_id)
     );
     UPDATE scan_requests SET status = 'pending_step1' WHERE status = 'pending_thayssa';
     UPDATE scan_requests SET status = 'pending_step2' WHERE status = 'pending_yuri';
