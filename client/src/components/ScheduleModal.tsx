@@ -9,8 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { CalendarClock, History, User2, XCircle, CheckCircle2, RotateCcw, Send, ClipboardList, Check, Loader2 } from "lucide-react";
+import { CalendarClock, History, User2, XCircle, CheckCircle2, RotateCcw, Send, ClipboardList, Check, Loader2, ScanLine } from "lucide-react";
 import { formatUTC, distanceUTC } from "@/lib/dateUtils";
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
@@ -22,7 +23,8 @@ interface ScheduleConfig {
   dayOfMonth: number;  // 1–31
   hour: number;
   minute: number;
-  mode: "incompletos" | "todos";
+  mode: "todos" | "selecionados";
+  ncms: string[];
 }
 
 interface ScheduleHistoryEntry {
@@ -44,6 +46,7 @@ interface ScheduleRequest {
   hour: number;
   minute: number;
   mode: string;
+  ncms?: string[] | null;
   createdAt: string;
 }
 
@@ -65,7 +68,7 @@ const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, i) => ({
 }));
 
 const FREQ_LABEL: Record<string, string> = { weekly: "Semanal", monthly: "Mensal" };
-const MODE_LABEL: Record<string, string> = { incompletos: "Pendentes", todos: "Todos os NCMs" };
+const MODE_LABEL: Record<string, string> = { incompletos: "Pendentes", todos: "Todos os NCMs", selecionados: "NCMs Selecionados" };
 const DOW_LABEL = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 const DEFAULT: ScheduleConfig = {
@@ -75,7 +78,8 @@ const DEFAULT: ScheduleConfig = {
   dayOfMonth: 1,
   hour: 8,
   minute: 0,
-  mode: "incompletos",
+  mode: "todos",
+  ncms: [],
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -114,6 +118,10 @@ function formatHistoryDetails(entry: ScheduleHistoryEntry): string {
     ? DOW_LABEL[d.dayOfWeek] ?? `Dia ${d.dayOfWeek}`
     : `Dia ${d.dayOfMonth}`;
   const time = `${String(d.hour).padStart(2, "0")}:${String(d.minute).padStart(2, "0")}`;
+  if (d.mode === "selecionados") {
+    const count = Array.isArray(d.ncms) ? d.ncms.length : 0;
+    return `${freq} • ${day} • ${time} • ${count} NCM(s) selecionado(s)`;
+  }
   const mode = MODE_LABEL[d.mode] ?? d.mode;
   return `${freq} • ${day} • ${time} • ${mode}`;
 }
@@ -124,9 +132,10 @@ interface Props {
   open: boolean;
   onClose: () => void;
   isAdmin: boolean;
+  availableNCMs: Array<{ ncm: string; descricao?: string }>;
 }
 
-export function ScheduleModal({ open, onClose, isAdmin }: Props) {
+export function ScheduleModal({ open, onClose, isAdmin, availableNCMs }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [cfg, setCfg] = useState<ScheduleConfig>(DEFAULT);
@@ -257,7 +266,8 @@ export function ScheduleModal({ open, onClose, isAdmin }: Props) {
       dayOfMonth: d.dayOfMonth ?? 1,
       hour:       d.hour       ?? 8,
       minute:     d.minute     ?? 0,
-      mode:       d.mode       ?? "incompletos",
+      mode:       d.mode       ?? "todos",
+      ncms:       Array.isArray(d.ncms) ? d.ncms : [],
     });
     setRestoredFrom(entry.id);
     setActiveTab("config");
@@ -271,7 +281,7 @@ export function ScheduleModal({ open, onClose, isAdmin }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={v => !v && handleClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarClock className="w-5 h-5 text-blue-600" />
@@ -417,17 +427,52 @@ export function ScheduleModal({ open, onClose, isAdmin }: Props) {
                     <p className="text-xs text-gray-400">Hora: 0–23 · Minuto: 0–59</p>
                   </div>
 
-                  {/* Modo */}
-                  <div className="space-y-1 mb-4">
-                    <Label className="text-sm">Modo de varredura</Label>
-                    <Select value={cfg.mode} onValueChange={v => set("mode", v as "incompletos" | "todos")}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="incompletos">Buscar Pendentes</SelectItem>
-                        <SelectItem value="todos">Buscar Todos (detecta mudanças)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {/* Seleção de NCMs */}
+                  {availableNCMs.length > 0 && (
+                    <div className="space-y-2 mb-4">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm flex items-center gap-1.5">
+                          <ScanLine className="w-3.5 h-3.5 text-indigo-500" />
+                          Varrer apenas NCMs selecionados
+                        </Label>
+                        <Switch
+                          checked={cfg.mode === "selecionados"}
+                          onCheckedChange={v => {
+                            if (v) {
+                              set("mode", "selecionados");
+                            } else {
+                              setCfg(prev => ({ ...prev, mode: "todos", ncms: [] }));
+                            }
+                          }}
+                        />
+                      </div>
+                      {cfg.mode === "selecionados" && (
+                        <div className="rounded-md border border-indigo-100 bg-indigo-50 p-2 space-y-1 max-h-48 overflow-y-auto">
+                          {availableNCMs.map(({ ncm, descricao }) => (
+                            <label
+                              key={ncm}
+                              className="flex items-center gap-2 px-1 py-0.5 rounded hover:bg-indigo-100 cursor-pointer"
+                              title={descricao}
+                            >
+                              <Checkbox
+                                checked={cfg.ncms.includes(ncm)}
+                                onCheckedChange={checked => {
+                                  set("ncms", checked
+                                    ? [...cfg.ncms, ncm]
+                                    : cfg.ncms.filter(n => n !== ncm)
+                                  );
+                                }}
+                              />
+                              <span className="font-mono text-xs text-gray-800">{ncm}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      {cfg.mode === "selecionados" && cfg.ncms.length === 0 && (
+                        <p className="text-xs text-amber-600">Selecione ao menos um NCM.</p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Próxima execução */}
                   <div className="rounded-md bg-blue-50 border border-blue-100 px-3 py-2 text-sm text-blue-800">
@@ -520,7 +565,9 @@ export function ScheduleModal({ open, onClose, isAdmin }: Props) {
                       ? DOW_LABEL[req.dayOfWeek] ?? `Dia ${req.dayOfWeek}`
                       : `Dia ${req.dayOfMonth}`;
                     const timeLabel = `${String(req.hour).padStart(2, "0")}:${String(req.minute).padStart(2, "0")}`;
-                    const modeLabel = MODE_LABEL[req.mode] ?? req.mode;
+                    const modeLabel = req.mode === "selecionados" && req.ncms?.length
+                      ? `${req.ncms.length} NCM(s) selecionado(s)`
+                      : (MODE_LABEL[req.mode] ?? req.mode);
                     const summary = req.enabled
                       ? `${freqLabel} • ${dayLabel} • ${timeLabel} • ${modeLabel}`
                       : "Desativar agendamento";
@@ -531,6 +578,9 @@ export function ScheduleModal({ open, onClose, isAdmin }: Props) {
                           <div>
                             <p className="text-sm font-medium text-gray-900">{req.requestedByName}</p>
                             <p className="text-xs text-gray-500 mt-0.5">{summary}</p>
+                            {req.mode === "selecionados" && req.ncms && req.ncms.length > 0 && (
+                              <p className="text-xs text-indigo-600 mt-0.5 font-mono">{req.ncms.join(", ")}</p>
+                            )}
                             <p className="text-xs text-gray-400 mt-0.5">{formatUTC(req.createdAt, "dd/MM/yyyy HH:mm")}</p>
                           </div>
                         </div>
@@ -591,14 +641,14 @@ export function ScheduleModal({ open, onClose, isAdmin }: Props) {
             isAdmin ? (
               <Button
                 onClick={() => saveMutation.mutate(cfg)}
-                disabled={saveMutation.isPending || isLoading}
+                disabled={saveMutation.isPending || isLoading || (cfg.enabled && cfg.mode === "selecionados" && cfg.ncms.length === 0)}
               >
                 {saveMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</> : "Salvar"}
               </Button>
             ) : (
               <Button
                 onClick={() => requestMutation.mutate(cfg)}
-                disabled={requestMutation.isPending || isLoading}
+                disabled={requestMutation.isPending || isLoading || (cfg.enabled && cfg.mode === "selecionados" && cfg.ncms.length === 0)}
               >
                 {requestMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Enviando...</> : <><Send className="w-4 h-4 mr-2" />Solicitar</>}
               </Button>

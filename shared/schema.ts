@@ -107,7 +107,8 @@ export const scanSchedule = tableFactory("scan_schedule", {
   dayOfMonth: integer("day_of_month").default(1), // 1–31 (used when monthly)
   hour: integer("hour").notNull().default(8),
   minute: integer("minute").notNull().default(0),
-  mode: varchar("mode").notNull().default("incompletos"), // 'incompletos' | 'todos'
+  mode: varchar("mode").notNull().default("todos"), // 'todos' | 'selecionados'
+  ncms: text("ncms"), // JSON array of NCM codes when mode='selecionados'
   updatedAt: timestamp("updated_at"),
 });
 

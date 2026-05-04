@@ -1900,6 +1900,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hour: r.hour,
         minute: r.minute,
         mode: r.mode,
+        ncms: r.ncms ? JSON.parse(r.ncms) : [],
       });
     } catch (error) {
       res.status(500).json({ message: "Failed to read schedule" });
@@ -1912,13 +1913,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!isAdminUser && !await hasPermission(schedUserId, PERMISSIONS.AGENDAR))
       return res.status(403).json({ message: "Sem permissão para configurar agendamento" });
     try {
-      const { enabled, frequency, dayOfWeek, dayOfMonth, hour, minute, mode } = req.body;
+      const { enabled, frequency, dayOfWeek, dayOfMonth, hour, minute, mode, ncms } = req.body;
+      const ncmsJson = Array.isArray(ncms) && ncms.length > 0 ? JSON.stringify(ncms) : null;
       const now = new Date();
       await db.insert(scanSchedule).values({
-        id: 1, enabled: enabled ? 1 : 0, frequency, dayOfWeek, dayOfMonth, hour, minute, mode, updatedAt: now,
+        id: 1, enabled: enabled ? 1 : 0, frequency, dayOfWeek, dayOfMonth, hour, minute, mode, ncms: ncmsJson, updatedAt: now,
       }).onConflictDoUpdate({
         target: scanSchedule.id,
-        set: { enabled: enabled ? 1 : 0, frequency, dayOfWeek, dayOfMonth, hour, minute, mode, updatedAt: now },
+        set: { enabled: enabled ? 1 : 0, frequency, dayOfWeek, dayOfMonth, hour, minute, mode, ncms: ncmsJson, updatedAt: now },
       });
       const rows = await db.select().from(scanSchedule).where(eq(scanSchedule.id, 1));
       if (enabled) applySchedule(rows[0]);
@@ -1932,6 +1934,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hour,
         minute,
         mode,
+        ncms: ncms ?? [],
       });
       res.json({ success: true });
     } catch (error) {
@@ -1992,7 +1995,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!await hasPermission(srUserId, PERMISSIONS.AGENDAR))
       return res.status(403).json({ message: "Sem permissão para solicitar agendamento" });
     try {
-      const { enabled, frequency, dayOfWeek, dayOfMonth, hour, minute, mode } = req.body;
+      const { enabled, frequency, dayOfWeek, dayOfMonth, hour, minute, mode, ncms } = req.body;
+      const ncmsJson = Array.isArray(ncms) && ncms.length > 0 ? JSON.stringify(ncms) : null;
       // Bloqueia se já tiver uma solicitação pendente
       const existing = await rawGet(
         "SELECT id FROM schedule_requests WHERE requested_by = ? AND status = 'pending'",
@@ -2001,12 +2005,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existing) return res.status(409).json({ message: "Você já tem uma solicitação de agendamento pendente." });
       const now = new Date().toISOString();
       const result = await rawRun(
-        `INSERT INTO schedule_requests (requested_by, enabled, frequency, day_of_week, day_of_month, hour, minute, mode, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-        [srUserId, enabled ? 1 : 0, frequency, dayOfWeek, dayOfMonth, hour, minute, mode, now, now]
+        `INSERT INTO schedule_requests (requested_by, enabled, frequency, day_of_week, day_of_month, hour, minute, mode, ncms, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+        [srUserId, enabled ? 1 : 0, frequency, dayOfWeek, dayOfMonth, hour, minute, mode, ncmsJson, now, now]
       );
       const { id: srAuditId, name: srAuditName } = getUserInfo(req);
-      logAudit(srAuditId, srAuditName, "SCHEDULE_REQUESTED", "schedule", { enabled, frequency, dayOfWeek, dayOfMonth, hour, minute, mode });
+      logAudit(srAuditId, srAuditName, "SCHEDULE_REQUESTED", "schedule", { enabled, frequency, dayOfWeek, dayOfMonth, hour, minute, mode, ncms: ncms ?? [] });
       res.status(201).json({ id: result.lastInsertRowid });
     } catch (error) {
       res.status(500).json({ message: "Erro ao criar solicitação de agendamento" });
@@ -2034,6 +2038,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hour: r.hour,
         minute: r.minute,
         mode: r.mode,
+        ncms: r.ncms ? JSON.parse(r.ncms) : [],
         createdAt: r.created_at,
       })));
     } catch {
@@ -2070,18 +2075,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await db.insert(scanSchedule).values({
         id: 1, enabled: row.enabled, frequency: row.frequency,
         dayOfWeek: row.day_of_week, dayOfMonth: row.day_of_month,
-        hour: row.hour, minute: row.minute, mode: row.mode, updatedAt: new Date(),
+        hour: row.hour, minute: row.minute, mode: row.mode, ncms: row.ncms ?? null, updatedAt: new Date(),
       }).onConflictDoUpdate({
         target: scanSchedule.id,
-        set: { enabled: row.enabled, frequency: row.frequency, dayOfWeek: row.day_of_week, dayOfMonth: row.day_of_month, hour: row.hour, minute: row.minute, mode: row.mode, updatedAt: new Date() },
+        set: { enabled: row.enabled, frequency: row.frequency, dayOfWeek: row.day_of_week, dayOfMonth: row.day_of_month, hour: row.hour, minute: row.minute, mode: row.mode, ncms: row.ncms ?? null, updatedAt: new Date() },
       });
       const schedRows = await db.select().from(scanSchedule).where(eq(scanSchedule.id, 1));
       if (row.enabled) applySchedule(schedRows[0]); else cancelSchedule();
       const { id: apUserId, name: apUserName } = getUserInfo(req);
+      const approvedNcms = row.ncms ? JSON.parse(row.ncms) : [];
       logAudit(apUserId, apUserName, "SCHEDULE_CONFIGURED", "schedule", {
         enabled: row.enabled, frequency: row.frequency, dayOfWeek: row.day_of_week,
         dayOfMonth: row.day_of_month, hour: row.hour, minute: row.minute, mode: row.mode,
-        approvedRequestId: row.id,
+        ncms: approvedNcms, approvedRequestId: row.id,
       });
       res.json({ success: true });
     } catch (error) {

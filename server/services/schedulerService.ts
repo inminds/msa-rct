@@ -85,8 +85,20 @@ function buildCronExpression(config: ScanSchedule): string {
   return `${m} ${h} * * ${dow}`;
 }
 
-async function runScraper(mode: string) {
-  const args = ["econet_scraper.py", ...(mode === "todos" ? ["--todos"] : [])];
+async function runScraper(mode: string, ncmsJson?: string | null) {
+  let args: string[];
+  if (ncmsJson) {
+    try {
+      const ncmList: string[] = JSON.parse(ncmsJson);
+      args = ncmList.length > 0
+        ? ["econet_scraper.py", "--ncms", ncmList.join(",")]
+        : ["econet_scraper.py", "--todos"];
+    } catch {
+      args = ["econet_scraper.py", "--todos"];
+    }
+  } else {
+    args = ["econet_scraper.py", ...(mode === "todos" ? ["--todos"] : [])];
+  }
 
   // Snapshot before scan — only filled NCMs
   let snapshot: Record<string, string>[] = [];
@@ -140,7 +152,7 @@ export function applySchedule(config: ScanSchedule) {
   const expr = buildCronExpression(config);
   console.log(`[scheduler] Agendando varredura: "${expr}" (mode: ${config.mode})`);
 
-  activeJob = cron.schedule(expr, () => runScraper(config.mode), {
+  activeJob = cron.schedule(expr, () => runScraper(config.mode, config.ncms), {
     timezone: "America/Sao_Paulo",
   });
 }

@@ -201,6 +201,14 @@ if (isDev) {
   if (!scanReqCols.includes('ncms'))
     sqliteDb.exec("ALTER TABLE scan_requests ADD COLUMN ncms TEXT");
 
+  const schedCols = (sqliteDb.pragma('table_info(scan_schedule)') as { name: string }[]).map((c: any) => c.name);
+  if (!schedCols.includes('ncms'))
+    sqliteDb.exec("ALTER TABLE scan_schedule ADD COLUMN ncms TEXT");
+
+  const schedReqCols = (sqliteDb.pragma('table_info(schedule_requests)') as { name: string }[]).map((c: any) => c.name);
+  if (!schedReqCols.includes('ncms'))
+    sqliteDb.exec("ALTER TABLE schedule_requests ADD COLUMN ncms TEXT");
+
   // Migrar status de scan_requests para nomes genéricos (independentes de usuário)
   sqliteDb.exec(`
     UPDATE scan_requests SET status = 'pending_step1' WHERE status = 'pending_thayssa';
