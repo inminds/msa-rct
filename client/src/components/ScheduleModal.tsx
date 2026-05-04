@@ -328,7 +328,7 @@ export function ScheduleModal({ open, onClose, isAdmin, availableNCMs }: Props) 
                 {!isAdmin && (
                   <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
                     <Send className="w-3.5 h-3.5 shrink-0" />
-                    Configure o agendamento desejado e clique em <strong className="mx-0.5">Solicitar</strong>. Um administrador irá revisar e aplicar.
+                    <span>Configure o agendamento desejado e clique em <strong>Solicitar</strong>. Um administrador irá revisar e aplicar.</span>
                   </div>
                 )}
 
@@ -447,14 +447,15 @@ export function ScheduleModal({ open, onClose, isAdmin, availableNCMs }: Props) 
                         />
                       </div>
                       {cfg.mode === "selecionados" && (
-                        <div className="rounded-md border border-indigo-100 bg-indigo-50 p-2 space-y-1 max-h-48 overflow-y-auto">
+                        <div className="rounded-md border border-indigo-100 bg-indigo-50 p-2 space-y-0.5 max-h-52 overflow-y-auto">
                           {availableNCMs.map(({ ncm, descricao }) => (
                             <label
                               key={ncm}
-                              className="flex items-center gap-2 px-1 py-0.5 rounded hover:bg-indigo-100 cursor-pointer"
+                              className="flex items-start gap-2 px-1 py-1 rounded hover:bg-indigo-100 cursor-pointer"
                               title={descricao}
                             >
                               <Checkbox
+                                className="mt-0.5 shrink-0"
                                 checked={cfg.ncms.includes(ncm)}
                                 onCheckedChange={checked => {
                                   set("ncms", checked
@@ -463,7 +464,14 @@ export function ScheduleModal({ open, onClose, isAdmin, availableNCMs }: Props) 
                                   );
                                 }}
                               />
-                              <span className="font-mono text-xs text-gray-800">{ncm}</span>
+                              <div>
+                                <span className="font-mono text-xs text-gray-800 block">{ncm}</span>
+                                {descricao && (
+                                  <span className="text-xs text-gray-400 block">
+                                    {descricao.length > 48 ? `${descricao.slice(0, 48)}…` : descricao}
+                                  </span>
+                                )}
+                              </div>
                             </label>
                           ))}
                         </div>
