@@ -405,7 +405,7 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
 
     # 2. Clica no radio do NCM mais específico sem "Ex "
     prefix = ncm_formatado[:7]
-    await _js_iframe(page, f"""
+    click_result = await _js_iframe(page, f"""
         const rows = Array.from(f2.contentDocument.querySelectorAll('tr'));
         let clicked = false;
         for (const r of rows) {{
@@ -415,12 +415,18 @@ async def buscar_ncm(page, ncm_formatado: str, busca_src: str) -> dict:
                 if (radio) {{ radio.click(); clicked = true; break; }}
             }}
         }}
-        if (!clicked) {{
-            const first = f2.contentDocument.querySelector('input[type="radio"]');
-            if (first) first.click();
-        }}
-        return 'ok';
+        return clicked ? 'ok' : 'NOT_FOUND';
     """)
+
+    if click_result == 'NOT_FOUND':
+        print(f"  ⚠️  NCM {ncm_formatado} não encontrado exatamente no Econet — dados preservados.")
+        return {
+            "_not_found": True,
+            "descricao": "", "pis_cum": "", "cofins_cum": "",
+            "pis_ncum": "", "cofins_ncum": "", "regime": "",
+            "legislacao": [], "obs_rg": "", "_abas": {},
+        }
+
     await page.wait_for_timeout(4000)  # página de detalhes do NCM carregar
 
     data = {
@@ -700,6 +706,11 @@ def salvar_excel(entradas: list[tuple[int, int]], resultados: list[dict]):
     total_cols = max(col_map.values())
 
     for (ri, ncm), r in zip(entradas, resultados):
+        # NCM não encontrado exatamente no Econet — preserva dados existentes
+        if r.get("_not_found"):
+            print(f"  ⚠️  {formatar_ncm(ncm)}: não encontrado no Econet, linha preservada sem alteração.")
+            continue
+
         dados_ant = snapshot.get(ri, {})
 
         # Monta dict de novos dados com chave = cabeçalho do Excel
