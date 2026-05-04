@@ -1238,11 +1238,15 @@ export default function NCMAnalysis() {
                           <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                             <td className="px-3 py-2 border border-gray-200 font-mono text-xs">{c.ncm}</td>
                             <td className="px-3 py-2 border border-gray-200 text-gray-700">{c.field}</td>
-                            <td className="px-3 py-2 border border-gray-200">
-                              <span className="line-through text-red-500 text-xs">{c.oldValue || "—"}</span>
+                            <td className={`px-3 py-2 border border-gray-200${c.field === "Descrição" ? " max-w-xs" : ""}`}>
+                              <span className={`line-through text-red-500 text-xs${c.field === "Descrição" ? " truncate block" : ""}`} title={c.field === "Descrição" ? (c.oldValue || undefined) : undefined}>
+                                {c.oldValue || "—"}
+                              </span>
                             </td>
-                            <td className="px-3 py-2 border border-gray-200">
-                              <span className="font-medium text-green-700 text-xs">{c.newValue || "—"}</span>
+                            <td className={`px-3 py-2 border border-gray-200${c.field === "Descrição" ? " max-w-xs" : ""}`}>
+                              <span className={`font-medium text-green-700 text-xs${c.field === "Descrição" ? " truncate block" : ""}`} title={c.field === "Descrição" ? (c.newValue || undefined) : undefined}>
+                                {c.newValue || "—"}
+                              </span>
                             </td>
                             <td className="px-3 py-2 border border-gray-200">
                               {c.status === "pending" && <Badge className="bg-yellow-100 text-yellow-800 text-xs">Pendente</Badge>}
@@ -1765,11 +1769,15 @@ export default function NCMAnalysis() {
                           {ncmHistory.map((change, i) => (
                             <tr key={change.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                               <td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">{change.field}</td>
-                              <td className="px-3 py-2 border border-gray-200">
-                                <span className="line-through text-red-500">{change.oldValue || "—"}</span>
+                              <td className={`px-3 py-2 border border-gray-200${change.field === "Descrição" ? " max-w-xs" : ""}`}>
+                                <span className={`line-through text-red-500${change.field === "Descrição" ? " truncate block" : ""}`} title={change.field === "Descrição" ? (change.oldValue || undefined) : undefined}>
+                                  {change.oldValue || "—"}
+                                </span>
                               </td>
-                              <td className="px-3 py-2 border border-gray-200">
-                                <span className="font-medium text-green-700">{change.newValue || "—"}</span>
+                              <td className={`px-3 py-2 border border-gray-200${change.field === "Descrição" ? " max-w-xs" : ""}`}>
+                                <span className={`font-medium text-green-700${change.field === "Descrição" ? " truncate block" : ""}`} title={change.field === "Descrição" ? (change.newValue || undefined) : undefined}>
+                                  {change.newValue || "—"}
+                                </span>
                               </td>
                               <td className="px-3 py-2 border border-gray-200 text-gray-500 whitespace-nowrap text-xs">
                                 {formatUTC(change.scanDate, "dd/MM/yyyy HH:mm")}

@@ -268,11 +268,15 @@ export default function RPADashboard() {
                         >
                           <td className="px-4 py-3 font-mono text-sm font-medium text-gray-900 whitespace-nowrap">{change.ncm}</td>
                           <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{change.field}</td>
-                          <td className="px-4 py-3 text-sm whitespace-nowrap">
-                            <span className="line-through text-red-500">{change.oldValue || "—"}</span>
+                          <td className={`px-4 py-3 text-sm ${change.field === "Descrição" ? "max-w-xs" : "whitespace-nowrap"}`}>
+                            <span className={`line-through text-red-500${change.field === "Descrição" ? " truncate block" : ""}`} title={change.field === "Descrição" ? (change.oldValue || undefined) : undefined}>
+                              {change.oldValue || "—"}
+                            </span>
                           </td>
-                          <td className="px-4 py-3 text-sm whitespace-nowrap">
-                            <span className="font-medium text-green-700">{change.newValue || "—"}</span>
+                          <td className={`px-4 py-3 text-sm ${change.field === "Descrição" ? "max-w-xs" : "whitespace-nowrap"}`}>
+                            <span className={`font-medium text-green-700${change.field === "Descrição" ? " truncate block" : ""}`} title={change.field === "Descrição" ? (change.newValue || undefined) : undefined}>
+                              {change.newValue || "—"}
+                            </span>
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
                             {formatUTC(change.scanDate, "dd/MM/yyyy HH:mm")}
