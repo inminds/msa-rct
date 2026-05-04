@@ -118,6 +118,25 @@ async function runScraper(mode: string, ncmsJson?: string | null) {
   if (child.pid) setActivePid(child.pid);
   console.log(`[scheduler] Varredura automática disparada (pid: ${child.pid}, mode: ${mode})`);
 
+  // Log scheduled scan in audit so it appears in history
+  try {
+    const { rawRun: auditRun } = await import("../rawDb.js");
+    let ncmList: string[] | undefined;
+    if (ncmsJson) {
+      try { ncmList = JSON.parse(ncmsJson); } catch {}
+    }
+    await auditRun(
+      "INSERT INTO audit_logs (user_id, user_name, action, category, details) VALUES (?, ?, ?, ?, ?)",
+      ["sistema", "Sistema", "SCAN_AGENDADO", "scan", JSON.stringify({
+        mode,
+        ncms: ncmList && ncmList.length > 0 ? ncmList : undefined,
+        pid: child.pid,
+      })]
+    );
+  } catch (err) {
+    console.error("[scheduler] Erro ao registrar auditoria:", err);
+  }
+
   child.on("exit", async (code) => {
     setActivePid(null);
     console.log(`[scheduler] Scraper finalizado (code: ${code})`);

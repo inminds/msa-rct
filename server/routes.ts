@@ -874,7 +874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `SELECT created_at FROM audit_logs
          WHERE action IN (
            'SCAN_TRIGGERED_TODOS','SCAN_TRIGGERED_INCOMPLETOS',
-           'SCAN_TRIGGERED_SELECIONADOS','SCAN_AUTO_TRIGGERED','SCAN_APPROVED_YURI'
+           'SCAN_TRIGGERED_SELECIONADOS','SCAN_AUTO_TRIGGERED','SCAN_APPROVED_YURI','SCAN_AGENDADO'
          )
          ORDER BY created_at DESC LIMIT 1`
       ) as any;
@@ -1572,7 +1572,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `SELECT * FROM audit_logs
          WHERE action IN (
            'SCAN_TRIGGERED_TODOS','SCAN_TRIGGERED_INCOMPLETOS',
-           'SCAN_TRIGGERED_SELECIONADOS','SCAN_AUTO_TRIGGERED','SCAN_APPROVED_YURI'
+           'SCAN_TRIGGERED_SELECIONADOS','SCAN_AUTO_TRIGGERED','SCAN_APPROVED_YURI','SCAN_AGENDADO'
          )
          ORDER BY created_at DESC LIMIT 1`
       ) as any;
@@ -1626,7 +1626,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
          WHERE action IN (
            'SCAN_TRIGGERED_TODOS','SCAN_TRIGGERED_INCOMPLETOS',
            'SCAN_TRIGGERED_SELECIONADOS','SCAN_AUTO_TRIGGERED','SCAN_APPROVED_YURI',
-           'SCAN_CANCELLED'
+           'SCAN_AGENDADO','SCAN_CANCELLED'
          )
          ORDER BY created_at DESC LIMIT 50`
       ) as any[];
@@ -2269,9 +2269,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (child.pid) setActivePid(child.pid);
         console.log(`[scan-requests] Yuri aprovou — scan iniciado (pid: ${child.pid}) mode: ${row.mode} — log: .data/scraper.log`);
         const { id: ap2UserId, name: ap2UserName } = getUserInfo(req);
+        const requesterUser = await rawGet("SELECT first_name, last_name FROM users WHERE id = ?", [row.requested_by]) as any;
+        const requestedByName = requesterUser
+          ? `${requesterUser.first_name ?? ""} ${requesterUser.last_name ?? ""}`.trim() || row.requested_by
+          : row.requested_by;
         logAudit(ap2UserId, ap2UserName, "SCAN_APPROVED_YURI", "scan", {
           requestId,
           requestedBy: row.requested_by,
+          requestedByName,
           mode: row.mode,
           ncms: row.ncms ? JSON.parse(row.ncms) : undefined,
           pid: child.pid,

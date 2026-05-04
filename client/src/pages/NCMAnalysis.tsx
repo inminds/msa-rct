@@ -95,6 +95,7 @@ const SCAN_ACTION_LABELS: Record<string, string> = {
   SCAN_TRIGGERED_SELECIONADOS: "Varredura seletiva",
   SCAN_AUTO_TRIGGERED:         "Varredura automática (upload)",
   SCAN_APPROVED_YURI:          "Varredura por aprovação",
+  SCAN_AGENDADO:               "Varredura agendada",
   SCAN_CANCELLED:              "Varredura cancelada",
 };
 
@@ -764,7 +765,13 @@ export default function NCMAnalysis() {
                                   : null}
                               </p>
                               <p className="text-xs text-gray-400 truncate">
-                                {scan.action === "SCAN_AUTO_TRIGGERED" ? "Sistema (automático)" : scan.triggeredBy}
+                                {scan.action === "SCAN_AUTO_TRIGGERED"
+                                  ? "Sistema (automático)"
+                                  : scan.action === "SCAN_AGENDADO"
+                                  ? "Sistema (agendado)"
+                                  : scan.action === "SCAN_APPROVED_YURI" && scan.details?.requestedByName
+                                  ? `Solicitado por ${scan.details.requestedByName}`
+                                  : scan.triggeredBy}
                               </p>
                             </div>
 
@@ -1171,14 +1178,29 @@ export default function NCMAnalysis() {
                 <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
                   <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Iniciada por</p>
                   <p className="font-medium text-gray-900">
-                    {scanDetailData.action === "SCAN_AUTO_TRIGGERED" ? "Sistema (automático)" : scanDetailData.triggeredBy}
+                    {scanDetailData.action === "SCAN_AUTO_TRIGGERED"
+                      ? "Sistema (automático)"
+                      : scanDetailData.action === "SCAN_AGENDADO"
+                      ? "Sistema (agendado)"
+                      : scanDetailData.action === "SCAN_APPROVED_YURI" && scanDetailData.details?.requestedByName
+                      ? scanDetailData.details.requestedByName
+                      : scanDetailData.triggeredBy}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {scanDetailData.action === "SCAN_TRIGGERED_TODOS" && "Todos os NCMs"}
                     {scanDetailData.action === "SCAN_TRIGGERED_INCOMPLETOS" && "NCMs pendentes"}
                     {scanDetailData.action === "SCAN_TRIGGERED_SELECIONADOS" && "NCMs selecionados"}
                     {scanDetailData.action === "SCAN_AUTO_TRIGGERED" && "Disparada por upload"}
-                    {scanDetailData.action === "SCAN_APPROVED_YURI" && "Solicitação aprovada"}
+                    {scanDetailData.action === "SCAN_AGENDADO" && (
+                      scanDetailData.details?.ncms?.length ? "NCMs selecionados" : "Todos os NCMs"
+                    )}
+                    {scanDetailData.action === "SCAN_APPROVED_YURI" && (
+                      <>
+                        {scanDetailData.details?.ncms?.length ? "NCMs selecionados" : "Todos os NCMs"}
+                        {" · aprovado por "}
+                        {scanDetailData.triggeredBy}
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
