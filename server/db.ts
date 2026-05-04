@@ -166,6 +166,22 @@ if (isDev) {
       PRIMARY KEY (user_id, notification_id),
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
+    CREATE TABLE IF NOT EXISTS schedule_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      requested_by VARCHAR NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      frequency VARCHAR NOT NULL DEFAULT 'weekly',
+      day_of_week INTEGER DEFAULT 1,
+      day_of_month INTEGER DEFAULT 1,
+      hour INTEGER NOT NULL DEFAULT 8,
+      minute INTEGER NOT NULL DEFAULT 0,
+      mode VARCHAR NOT NULL DEFAULT 'incompletos',
+      status VARCHAR NOT NULL DEFAULT 'pending',
+      rejection_note TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (requested_by) REFERENCES users(id)
+    );
   `);
 
   db = drizzleSqlite({ client: sqliteDb, schema });
@@ -286,6 +302,21 @@ if (isDev) {
       read_at TIMESTAMP,
       deleted INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (user_id, notification_id)
+    );
+    CREATE TABLE IF NOT EXISTS schedule_requests (
+      id SERIAL PRIMARY KEY,
+      requested_by VARCHAR NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      frequency VARCHAR NOT NULL DEFAULT 'weekly',
+      day_of_week INTEGER DEFAULT 1,
+      day_of_month INTEGER DEFAULT 1,
+      hour INTEGER NOT NULL DEFAULT 8,
+      minute INTEGER NOT NULL DEFAULT 0,
+      mode VARCHAR NOT NULL DEFAULT 'incompletos',
+      status VARCHAR NOT NULL DEFAULT 'pending',
+      rejection_note TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     UPDATE scan_requests SET status = 'pending_step1' WHERE status = 'pending_thayssa';
     UPDATE scan_requests SET status = 'pending_step2' WHERE status = 'pending_yuri';

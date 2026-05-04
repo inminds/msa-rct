@@ -1137,7 +1137,7 @@ export default function NCMAnalysis() {
         </div>
       </main>
 
-      <ScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
+      <ScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} isAdmin={isAdmin} />
 
       {/* Modal — detalhes da varredura (última ou selecionada do histórico) */}
       <Dialog open={scanDetailOpen} onOpenChange={(open) => { setScanDetailOpen(open); if (!open) setScanDetailData(null); }}>

@@ -1055,7 +1055,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const { id: userId } = getUserInfo(req);
     const notifications: {
       id: string;
-      type: "scan_completed" | "ncm_changes" | "scan_request_update" | "upload_processed" | "ncm_pending_scan" | "scan_running" | "scan_scheduled" | "scan_request_pending" | "schedule_configured" | "ncm_change_resolved";
+      type: "scan_completed" | "ncm_changes" | "scan_request_update" | "upload_processed" | "ncm_pending_scan" | "scan_running" | "scan_scheduled" | "scan_request_pending" | "schedule_configured" | "ncm_change_resolved" | "schedule_request_pending";
       title: string;
       message: string;
       timestamp: string;
@@ -1133,6 +1133,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
           live: true,
         });
       }
+    }
+
+    // 0d. Solicitações de agendamento pendentes (live — só para admins)
+    if ((req.user as any).role === "ADMIN") {
+      const pendingSched = await rawGet(
+        "SELECT COUNT(*) as total, MAX(created_at) as latest FROM schedule_requests WHERE status = 'pending'"
+      ) as any;
+      if (Number(pendingSched?.total ?? 0) > 0) {
+        notifications.push({
+          id: `schedule_request_pending_${pendingSched.latest}`,
+          type: "schedule_request_pending",
+          title: "Solicitação de agendamento pendente",
+          message: `${pendingSched.total} solicitação(ões) de configuração de agendamento aguardam aprovação`,
+          timestamp: pendingSched.latest,
+          href: "/ncm-analysis",
+          live: true,
+        });
+      }
+    }
+
+    // 0e. Atualização da solicitação de agendamento do usuário (aprovada/rejeitada, últimos 7 dias)
+    const mySchedReq = await rawGet(
+      `SELECT id, status, rejection_note, updated_at FROM schedule_requests
+       WHERE requested_by = ? AND status IN ('approved','rejected')
+         AND updated_at >= datetime('now', '-7 days')
+       ORDER BY updated_at DESC LIMIT 1`,
+      [userId]
+    ) as any;
+    if (mySchedReq) {
+      notifications.push({
+        id: `schedule_request_${mySchedReq.id}_${mySchedReq.status}`,
+        type: "scan_request_update",
+        title: mySchedReq.status === "approved" ? "Solicitação de agendamento aprovada" : "Solicitação de agendamento rejeitada",
+        message: mySchedReq.status === "rejected"
+          ? `Motivo: ${mySchedReq.rejection_note || "Não informado"}`
+          : "Sua solicitação foi aprovada e o agendamento foi configurado",
+        timestamp: mySchedReq.updated_at,
+        href: "/ncm-analysis",
+      });
     }
 
     // 1. Scan NCM concluído — existe scan_date recente em ncm_changes e scraper não está rodando
@@ -1941,6 +1980,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Failed to cancel schedule" });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Schedule Request endpoints (fluxo de aprovação para usuários não-admin)
+
+  // POST /api/ncm-scan/schedule-requests — usuário com permissão agendar solicita configuração
+  app.post("/api/ncm-scan/schedule-requests", isAuthenticated, async (req: any, res) => {
+    const srUserId = (req.user as any).id;
+    if (!await hasPermission(srUserId, PERMISSIONS.AGENDAR))
+      return res.status(403).json({ message: "Sem permissão para solicitar agendamento" });
+    try {
+      const { enabled, frequency, dayOfWeek, dayOfMonth, hour, minute, mode } = req.body;
+      // Bloqueia se já tiver uma solicitação pendente
+      const existing = await rawGet(
+        "SELECT id FROM schedule_requests WHERE requested_by = ? AND status = 'pending'",
+        [srUserId]
+      );
+      if (existing) return res.status(409).json({ message: "Você já tem uma solicitação de agendamento pendente." });
+      const now = new Date().toISOString();
+      const result = await rawRun(
+        `INSERT INTO schedule_requests (requested_by, enabled, frequency, day_of_week, day_of_month, hour, minute, mode, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+        [srUserId, enabled ? 1 : 0, frequency, dayOfWeek, dayOfMonth, hour, minute, mode, now, now]
+      );
+      const { id: srAuditId, name: srAuditName } = getUserInfo(req);
+      logAudit(srAuditId, srAuditName, "SCHEDULE_REQUESTED", "schedule", { enabled, frequency, dayOfWeek, dayOfMonth, hour, minute, mode });
+      res.status(201).json({ id: result.lastInsertRowid });
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao criar solicitação de agendamento" });
+    }
+  });
+
+  // GET /api/ncm-scan/schedule-requests/pending — admin lista pendentes
+  app.get("/api/ncm-scan/schedule-requests/pending", isAuthenticated, async (req: any, res) => {
+    if ((req.user as any).role !== "ADMIN")
+      return res.status(403).json({ message: "Apenas administradores" });
+    try {
+      const rows = await rawAll(
+        `SELECT sr.*, u.first_name, u.last_name FROM schedule_requests sr
+         LEFT JOIN users u ON sr.requested_by = u.id
+         WHERE sr.status = 'pending' ORDER BY sr.created_at ASC`
+      ) as any[];
+      res.json(rows.map(r => ({
+        id: r.id,
+        requestedBy: r.requested_by,
+        requestedByName: `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() || r.requested_by,
+        enabled: !!r.enabled,
+        frequency: r.frequency,
+        dayOfWeek: r.day_of_week,
+        dayOfMonth: r.day_of_month,
+        hour: r.hour,
+        minute: r.minute,
+        mode: r.mode,
+        createdAt: r.created_at,
+      })));
+    } catch {
+      res.status(500).json({ message: "Erro ao buscar solicitações" });
+    }
+  });
+
+  // GET /api/ncm-scan/schedule-requests/mine — solicitação mais recente do usuário logado
+  app.get("/api/ncm-scan/schedule-requests/mine", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const row = await rawGet(
+        "SELECT * FROM schedule_requests WHERE requested_by = ? ORDER BY created_at DESC LIMIT 1",
+        [userId]
+      ) as any;
+      if (!row) return res.json(null);
+      res.json({ id: row.id, status: row.status, rejectionNote: row.rejection_note, createdAt: row.created_at });
+    } catch {
+      res.status(500).json({ message: "Erro ao buscar solicitação" });
+    }
+  });
+
+  // POST /api/ncm-scan/schedule-requests/:id/approve — admin aprova e aplica
+  app.post("/api/ncm-scan/schedule-requests/:id/approve", isAuthenticated, async (req: any, res) => {
+    if ((req.user as any).role !== "ADMIN")
+      return res.status(403).json({ message: "Apenas administradores" });
+    try {
+      const row = await rawGet("SELECT * FROM schedule_requests WHERE id = ?", [req.params.id]) as any;
+      if (!row) return res.status(404).json({ message: "Solicitação não encontrada" });
+      if (row.status !== "pending") return res.status(409).json({ message: "Solicitação já processada" });
+      const now = new Date().toISOString();
+      await rawRun("UPDATE schedule_requests SET status='approved', updated_at=? WHERE id=?", [now, req.params.id]);
+      // Aplica o agendamento
+      await db.insert(scanSchedule).values({
+        id: 1, enabled: row.enabled, frequency: row.frequency,
+        dayOfWeek: row.day_of_week, dayOfMonth: row.day_of_month,
+        hour: row.hour, minute: row.minute, mode: row.mode, updatedAt: new Date(),
+      }).onConflictDoUpdate({
+        target: scanSchedule.id,
+        set: { enabled: row.enabled, frequency: row.frequency, dayOfWeek: row.day_of_week, dayOfMonth: row.day_of_month, hour: row.hour, minute: row.minute, mode: row.mode, updatedAt: new Date() },
+      });
+      const schedRows = await db.select().from(scanSchedule).where(eq(scanSchedule.id, 1));
+      if (row.enabled) applySchedule(schedRows[0]); else cancelSchedule();
+      const { id: apUserId, name: apUserName } = getUserInfo(req);
+      logAudit(apUserId, apUserName, "SCHEDULE_CONFIGURED", "schedule", {
+        enabled: row.enabled, frequency: row.frequency, dayOfWeek: row.day_of_week,
+        dayOfMonth: row.day_of_month, hour: row.hour, minute: row.minute, mode: row.mode,
+        approvedRequestId: row.id,
+      });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Erro ao aprovar solicitação" });
+    }
+  });
+
+  // POST /api/ncm-scan/schedule-requests/:id/reject — admin rejeita
+  app.post("/api/ncm-scan/schedule-requests/:id/reject", isAuthenticated, async (req: any, res) => {
+    if ((req.user as any).role !== "ADMIN")
+      return res.status(403).json({ message: "Apenas administradores" });
+    try {
+      const row = await rawGet("SELECT id, status FROM schedule_requests WHERE id = ?", [req.params.id]) as any;
+      if (!row) return res.status(404).json({ message: "Solicitação não encontrada" });
+      if (row.status !== "pending") return res.status(409).json({ message: "Solicitação já processada" });
+      const { note } = req.body as { note?: string };
+      const now = new Date().toISOString();
+      await rawRun(
+        "UPDATE schedule_requests SET status='rejected', rejection_note=?, updated_at=? WHERE id=?",
+        [note ?? null, now, req.params.id]
+      );
+      const { id: rjUserId, name: rjUserName } = getUserInfo(req);
+      logAudit(rjUserId, rjUserName, "SCHEDULE_REQUEST_REJECTED", "schedule", { requestId: req.params.id, note });
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ message: "Erro ao rejeitar solicitação" });
     }
   });
 
