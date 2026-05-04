@@ -118,6 +118,7 @@ def cmd_restore(ncm: str, field: str, value: str):
     """Restore (overwrite) a single field for a given NCM in the Excel."""
     # Map field name → column index (1-based)
     FIELD_COL = {
+        "Descrição": 3,             # C
         "PIS Cumulativo": 4,        # D
         "COFINS Cumulativo": 5,     # E
         "PIS Não Cumulativo": 6,    # F

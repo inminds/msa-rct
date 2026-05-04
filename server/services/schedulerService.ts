@@ -11,6 +11,7 @@ let activeJob: cron.ScheduledTask | null = null;
 
 // Fields to compare for change detection
 const COMPARE_FIELDS = [
+  "Descrição",
   "PIS Cumulativo",
   "COFINS Cumulativo",
   "PIS Não Cumulativo",
